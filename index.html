@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="es-MX">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="Dashboard de finanzas personales." />
+    <title>Finanzas personales | Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="pokemon-layer" aria-hidden="true"></div>
+    <main class="app-layout">
+      <div class="dashboard-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Resumen financiero</p>
+          <h1>Mi Dashboard</h1>
+        </div>
+        <button class="primary-button" id="open-purchase-modal" type="button">+ Registrar compra</button>
+      </header>
+
+      <section class="view" id="dashboard-view" role="tabpanel" aria-labelledby="tab-dashboard">
+      <div class="dashboard-with-totals">
+      <section class="dashboard-grid" aria-label="Resumen de finanzas">
+        <article class="panel doughnut-card wide-panel">
+          <div class="panel-heading"><div><p class="panel-label">Panorama general</p><h2>Deuda global</h2></div><span class="live-dot" id="last-updated">Actualizado: —</span></div>
+          <div class="doughnut-wrap"><canvas id="debt-chart" aria-label="Distribución de deuda por tarjeta"></canvas><div class="chart-center"><span>Deuda total</span><strong id="chart-debt-total">$0.00</strong></div></div>
+        </article>
+        <article class="panel flow-chart-card wide-panel">
+          <div class="panel-heading"><div><p class="panel-label">Flujo de pagos</p><h2>Próximos 3 meses</h2></div><span class="muted">Proyección</span></div>
+          <div class="line-wrap"><canvas id="flow-chart" aria-label="Proyección de pagos de los próximos tres meses"></canvas></div>
+        </article>
+        <article class="panel balance-panel">
+          <p class="panel-label">Saldo por pagar</p>
+          <p class="amount" id="total-balance">$0.00</p>
+          <span class="trend" id="balance-detail">Sin compras registradas</span>
+        </article>
+
+        <article class="panel">
+          <p class="panel-label">Pagos este mes</p>
+          <p class="amount" id="monthly-payments">$0.00</p>
+          <span class="muted" id="monthly-payment-detail">0 pagos proyectados</span>
+        </article>
+
+        <article class="panel">
+          <p class="panel-label">Compras a MSI</p>
+          <p class="amount" id="msi-count">0</p>
+          <span class="muted" id="financed-total">$0.00 financiados</span>
+        </article>
+
+        <article class="panel">
+          <p class="panel-label">Próximo pago</p>
+          <p class="amount" id="next-payment-date">—</p>
+          <span class="muted" id="next-payment-card">Sin pagos próximos</span>
+        </article>
+
+        <article class="panel wide-panel cards-panel">
+          <div class="panel-heading">
+            <div><p class="panel-label">Fuentes</p><h2>Calendario de financiamiento</h2></div>
+            <button class="text-button" type="button">Ver todas</button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Fuente</th><th>Tipo</th><th>Calendario</th><th>Saldo</th></tr></thead>
+              <tbody id="cards-table-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel wide-panel purchases-panel">
+          <div class="panel-heading">
+            <div><p class="panel-label">Compras</p><h2>Mensualidades activas</h2></div>
+            <button class="text-button" type="button">Ver compras</button>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Compra</th><th>Tarjeta</th><th>Mensualidad</th><th>Próximo pago</th></tr></thead>
+              <tbody id="purchases-table-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+      <aside class="totals-panel" aria-label="Totales y alertas">
+        <p class="panel-label">Control de efectivo</p>
+        <h2>Totales y alertas</h2>
+        <section class="total-card"><p>Total deuda global</p><strong id="global-debt">$0.00</strong><span id="global-debt-detail">0 compras activas</span></section>
+        <section class="alert-card"><p class="panel-label">Urgente por pagar</p><strong id="urgent-date">Sin cortes próximos</strong><span id="urgent-card">—</span><b id="urgent-amount">$0.00</b><small>Mensualidades a cubrir en este ciclo de corte.</small></section>
+      </aside>
+      </div>
+      </section>
+
+      <section class="view" id="breakdown-view" role="tabpanel" aria-labelledby="tab-breakdown" hidden>
+        <article class="panel breakdown-panel">
+          <div class="panel-heading"><div><p class="panel-label">Cronograma de amortización</p><h2>Desglose de pagos</h2></div><span class="muted">Parcialidades futuras ordenadas por fecha</span></div>
+          <div class="table-scroll"><table class="breakdown-table">
+            <thead><tr><th>Fecha exacta de pago</th><th>Concepto</th><th>Tarjeta</th><th>Parcialidad</th><th>Monto del pago</th></tr></thead>
+            <tbody id="breakdown-table-body"></tbody>
+          </table></div>
+        </article>
+      </section>
+
+      <section class="view" id="manage-view" role="tabpanel" aria-labelledby="tab-manage" hidden>
+        <article class="panel manage-panel">
+          <div class="panel-heading"><div><p class="panel-label">Datos guardados</p><h2>Administrar compras</h2></div><button class="primary-button" id="manage-add-purchase" type="button">+ Nueva compra</button></div>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Nombre</th><th>Monto</th><th>Tarjeta</th><th>MSI</th><th>Acciones</th></tr></thead>
+            <tbody id="manage-table-body"></tbody>
+          </table></div>
+        </article>
+        <article class="panel manage-panel cards-management-panel">
+          <div class="panel-heading"><div><p class="panel-label">Configuración</p><h2>Fuentes de financiamiento</h2></div><button class="primary-button" id="open-card-modal" type="button">+ Nueva fuente</button></div>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Fuente</th><th>Tipo</th><th>Calendario de pago</th><th>Acciones</th></tr></thead>
+            <tbody id="manage-cards-table-body"></tbody>
+          </table></div>
+        </article>
+      </section>
+      </div>
+    </main>
+    <nav class="bottom-nav" role="tablist" aria-label="Navegación principal">
+      <button class="tab is-active" id="tab-dashboard" role="tab" aria-selected="true" aria-controls="dashboard-view" data-view="dashboard-view" type="button"><span class="nav-icon">◉</span><span>Dashboard</span></button>
+      <button class="tab" id="tab-breakdown" role="tab" aria-selected="false" aria-controls="breakdown-view" data-view="breakdown-view" type="button"><span class="nav-icon">⌁</span><span>Desglose</span></button>
+      <button class="tab" id="tab-manage" role="tab" aria-selected="false" aria-controls="manage-view" data-view="manage-view" type="button"><span class="nav-icon">▦</span><span>Administrar</span></button>
+    </nav>
+    
+    <div class="modal" id="purchase-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card">
+        <div class="modal-header"><h2 id="modal-title">Registrar compra</h2><button class="close-button" id="close-purchase-modal" type="button" aria-label="Cerrar">×</button></div>
+        <form id="purchase-form">
+          <label>Nombre de la compra<input id="purchase-name" name="nombre" required maxlength="80" placeholder="Ej. Laptop" /></label>
+          <label>Monto total<input id="purchase-amount" name="monto" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label>
+          <label>Fuente de financiamiento<select id="purchase-card" name="tarjeta" required></select></label>
+          
+          <label>Meses sin intereses
+            <select id="purchase-months" name="meses" required>
+              <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+              <option value="9">9</option><option value="12">12</option><option value="18">18</option>
+              <option value="24">24</option><option value="32">32</option><option value="48">48</option>
+            </select>
+          </label>
+
+          <label>Mensualidades ya pagadas
+            <select id="purchase-paid-months" name="mensualidadesPagadas" required>
+              <option value="0" selected>0</option>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+              <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option>
+              <option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option>
+              <option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option>
+              <option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option><option value="25">25</option>
+              <option value="26">26</option><option value="27">27</option><option value="28">28</option><option value="29">29</option><option value="30">30</option>
+              <option value="31">31</option><option value="32">32</option><option value="33">33</option><option value="34">34</option><option value="35">35</option>
+              <option value="36">36</option><option value="37">37</option><option value="38">38</option><option value="39">39</option><option value="40">40</option>
+              <option value="41">41</option><option value="42">42</option><option value="43">43</option><option value="44">44</option><option value="45">45</option>
+              <option value="46">46</option><option value="47">47</option><option value="48">48</option>
+            </select>
+          </label>
+
+          <label>Fecha del primer pago<input id="fechaPrimerPago" name="fechaPrimerPago" required type="date" /></label>
+          <p class="form-error" id="form-error" aria-live="polite"></p>
+          <div class="modal-actions"><button class="text-button" id="cancel-purchase" type="button">Cancelar</button><button class="primary-button" id="save-purchase" type="submit">Guardar compra</button></div>
+        </form>
+      </div>
+    </div>
+    
+    <div class="modal" id="card-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="card-modal-title">
+      <div class="modal-card">
+        <div class="modal-header"><h2 id="card-modal-title">Registrar fuente</h2><button class="close-button" id="close-card-modal" type="button" aria-label="Cerrar">×</button></div>
+        <form id="card-form">
+          <label>Nombre de la fuente<input id="card-name" name="nombre" required maxlength="60" placeholder="Ej. Oro o Préstamo familiar" /></label>
+          <label>Tipo de fuente
+            <select id="source-type" name="tipo">
+              <option value="tarjeta">Tarjeta de crédito</option>
+              <option value="prestamo">Préstamo personal</option>
+              <option value="departamental">Departamental</option>
+            </select>
+          </label>
+          <div id="credit-fields"><label>Día de corte<input id="card-cutoff" name="corte" type="number" min="1" max="31" step="1" /></label><label>Día límite de pago<input id="card-due" name="limite" type="number" min="1" max="31" step="1" /></label></div>
+          <div id="loan-fields" hidden><label>Días de pago<input id="loan-payment-days" name="diasPago" inputmode="numeric" placeholder="Ej. 15, 30" /></label><span class="field-help">Separa los días con comas. Ejemplo: 15, 30.</span></div>
+          <p class="form-error" id="card-form-error" aria-live="polite"></p>
+          <div class="modal-actions"><button class="text-button" id="cancel-card" type="button">Cancelar</button><button class="primary-button" id="save-card" type="submit">Guardar fuente</button></div>
+        </form>
+      </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
