@@ -1,6 +1,4 @@
-const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
-
-// 1. Configuración de Firebase (pega aquí las claves que copiaste de Firebase)
+// 1. Configuración de Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyDCJnGNyd838CEaEB6tu4Y01X3ZUD3sCH0",
   authDomain: "mis-finanzas-5f1f5.firebaseapp.com",
@@ -10,11 +8,10 @@ const firebaseConfig = {
   appId: "1:665281319781:web:cb16f907766e3184f8078c"
 };
 
-// 2. Inicializar Firebase y referencia a la base de datos
+// 2. Inicializar Firebase y referencia a Firestore
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const docRef = db.collection("finanzas").doc("mi_dashboard");
-
 
 const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
@@ -38,11 +35,11 @@ class Compra {
 function normalizePaymentDays(days) { return [...new Set((Array.isArray(days) ? days : String(days).split(",")).map(Number).filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))].sort((a, b) => a - b); }
 const readStorage = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return Array.isArray(value) ? value : fallback; } catch { return fallback; } };
 const writeStorage = (key, value) => localStorage.setItem(key, JSON.stringify(value));
-const touchUpdatedAt = () => localStorage.setItem(STORAGE_KEYS.updatedAt, new Date().toISOString());
 
 const storageWasEmpty = localStorage.length === 0;
 let cards = readStorage(STORAGE_KEYS.cards, []);
 
+// Función centralizada para guardar en LocalStorage y Firestore en la nube
 async function saveToCloud() {
   const timestamp = new Date().toISOString();
   localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
@@ -51,7 +48,7 @@ async function saveToCloud() {
 
   try {
     await docRef.set({
-      cards: cards,
+      cards: cards.map(c => ({ ...c })),
       purchases: purchases.map(p => ({ ...p })),
       updatedAt: timestamp
     });
@@ -85,7 +82,7 @@ writeStorage(STORAGE_KEYS.cards, cards);
 let purchases = readStorage(STORAGE_KEYS.purchases, []).map((data) => new Compra(data));
 
 const HISTORICAL_PURCHASES = [{ compra: "LIVERPOOL PANTALLA", monto: 387 }, { compra: "COLCHON SEARS", monto: 354 }, { compra: "PROMODA", monto: 417 }, { compra: "PRESTAMO MP", monto: 429.5 }, { compra: "DIDI PRESTAMOS", monto: 964.95 }, { compra: "PRESTAMO NU", monto: 4134 }, { compra: "MOCHILA", monto: 1393 }, { compra: "PC", monto: 5377 }, { compra: "CELULAR", monto: 17388 }, { compra: "SMARTWATCH", monto: 3601 }, { compra: "SEGURO", monto: 4885 }, { compra: "BICICLETA", monto: 5205 }, { compra: "MITSUBISHI", monto: 141250 }];
-function migrateHistoricalPurchasesIfNeeded() { if (!storageWasEmpty || !cards[0]) return; purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: cards[0].nombre, mesesSinIntereses: 1 })); writeStorage(STORAGE_KEYS.purchases, purchases); touchUpdatedAt(); }
+function migrateHistoricalPurchasesIfNeeded() { if (!storageWasEmpty || !cards[0]) return; purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: cards[0].nombre, mesesSinIntereses: 1 })); saveToCloud(); }
 migrateHistoricalPurchasesIfNeeded();
 
 const createDate = (year, month, day) => new Date(year, month, Math.min(day, new Date(year, month + 1, 0).getDate()));
@@ -122,7 +119,6 @@ function renderUpdatedBadge() { const raw = localStorage.getItem(STORAGE_KEYS.up
 
 function renderPokemonEasterEgg() { 
   const layer = document.querySelector("#pokemon-layer"); 
-  
   layer.style.opacity = '0';
   
   setTimeout(() => {
@@ -147,7 +143,6 @@ function renderPokemonEasterEgg() {
       const variation = (Math.random() * 4 - 2).toFixed(2);
       const finalPos = slot.pos + Number(variation);
 
-      // Posición de inicio ajustada a -50px para esconder bien los 40px
       if (slot.edge === 'top') {
         style = `top: -50px; left: ${finalPos}%;`;
         animClass = "pokemon-peek-top";
@@ -226,7 +221,19 @@ function openSourceModal(source = null) { editingSourceName = source?.nombre ?? 
 document.querySelector("#open-purchase-modal").addEventListener("click", () => openPurchaseModal()); document.querySelector("#manage-add-purchase").addEventListener("click", () => openPurchaseModal()); document.querySelector("#close-purchase-modal").addEventListener("click", closePurchaseModal); document.querySelector("#cancel-purchase").addEventListener("click", closePurchaseModal); purchaseModal.addEventListener("click", (event) => { if (event.target === purchaseModal) closePurchaseModal(); });
 document.querySelector("#open-card-modal").addEventListener("click", () => openSourceModal()); document.querySelector("#close-card-modal").addEventListener("click", closeSourceModal); document.querySelector("#cancel-card").addEventListener("click", closeSourceModal); sourceModal.addEventListener("click", (event) => { if (event.target === sourceModal) closeSourceModal(); }); document.querySelector("#source-type").addEventListener("change", toggleSourceFields);
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closePurchaseModal(); closeSourceModal(); } }); document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => { document.querySelectorAll(".tab").forEach((item) => { const active = item === tab; item.classList.toggle("is-active", active); item.setAttribute("aria-selected", active); }); document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== tab.dataset.view; }); }));
-document.querySelector("#manage-table-body").addEventListener("click", (event) => { const button = event.target.closest("button[data-action]"); if (!button) return; const index = purchases.findIndex(({ id }) => id === button.dataset.id); if (index < 0) return; if (button.dataset.action === "edit") openPurchaseModal(purchases[index]); if (button.dataset.action === "delete" && window.confirm(`¿Eliminar “${purchases[index].nombre}”?`)) { purchases.splice(index, 1); writeStorage(STORAGE_KEYS.purchases, purchases); touchUpdatedAt(); render(); } });
+
+document.querySelector("#manage-table-body").addEventListener("click", (event) => { 
+  const button = event.target.closest("button[data-action]"); 
+  if (!button) return; 
+  const index = purchases.findIndex(({ id }) => id === button.dataset.id); 
+  if (index < 0) return; 
+  if (button.dataset.action === "edit") openPurchaseModal(purchases[index]); 
+  if (button.dataset.action === "delete" && window.confirm(`¿Eliminar “${purchases[index].nombre}”?`)) { 
+    purchases.splice(index, 1); 
+    saveToCloud(); 
+    render(); 
+  } 
+});
 
 purchaseForm.addEventListener("submit", (event) => { 
   event.preventDefault(); 
@@ -235,10 +242,29 @@ purchaseForm.addEventListener("submit", (event) => {
   const changes = { nombre: data.get("nombre").trim(), montoTotal: amount, tarjeta: data.get("tarjeta"), mesesSinIntereses: months, mensualidadesPagadas: paid, fechaPrimerPago: fechaPrimerPago }; 
   const index = purchases.findIndex(({ id }) => id === editingPurchaseId); 
   if (index >= 0) purchases[index] = new Compra({ ...purchases[index], ...changes, saldoRestante: amount }); else purchases.push(new Compra(changes)); 
-  writeStorage(STORAGE_KEYS.purchases, purchases); touchUpdatedAt(); error.textContent = ""; closePurchaseModal(); render(); 
+  saveToCloud(); 
+  error.textContent = ""; 
+  closePurchaseModal(); 
+  render(); 
 });
 
-document.querySelector("#manage-cards-table-body").addEventListener("click", (event) => { const button = event.target.closest("button[data-source-action]"); if (!button || button.disabled) return; const index = cards.findIndex(({ nombre }) => nombre === button.dataset.sourceName); if (index < 0) return; if (button.dataset.sourceAction === "edit") openSourceModal(cards[index]); if (button.dataset.sourceAction === "delete") { const replacement = cards.find((_, current) => current !== index); if (!replacement && purchases.some(({ tarjeta }) => tarjeta === cards[index].nombre)) return; if (replacement) { purchases = purchases.map((purchase) => purchase.tarjeta === cards[index].nombre ? new Compra({ ...purchase, tarjeta: replacement.nombre }) : purchase); writeStorage(STORAGE_KEYS.purchases, purchases); } cards.splice(index, 1); writeStorage(STORAGE_KEYS.cards, cards); touchUpdatedAt(); render(); } });
+document.querySelector("#manage-cards-table-body").addEventListener("click", (event) => { 
+  const button = event.target.closest("button[data-source-action]"); 
+  if (!button || button.disabled) return; 
+  const index = cards.findIndex(({ nombre }) => nombre === button.dataset.sourceName); 
+  if (index < 0) return; 
+  if (button.dataset.sourceAction === "edit") openSourceModal(cards[index]); 
+  if (button.dataset.sourceAction === "delete") { 
+    const replacement = cards.find((_, current) => current !== index); 
+    if (!replacement && purchases.some(({ tarjeta }) => tarjeta === cards[index].nombre)) return; 
+    if (replacement) { 
+      purchases = purchases.map((purchase) => purchase.tarjeta === cards[index].nombre ? new Compra({ ...purchase, tarjeta: replacement.nombre }) : purchase); 
+    } 
+    cards.splice(index, 1); 
+    saveToCloud(); 
+    render(); 
+  } 
+});
 
 sourceForm.addEventListener("submit", (event) => { 
   event.preventDefault(); 
@@ -246,10 +272,36 @@ sourceForm.addEventListener("submit", (event) => {
   if (!name || ((type === "tarjeta" || type === "departamental") && (!Number.isInteger(cutoff) || cutoff < 1 || cutoff > 31 || !Number.isInteger(due) || due < 1 || due > 31)) || (type === "prestamo" && !days.length)) { error.textContent = "Completa los datos de la fuente correctamente."; return; } 
   const index = cards.findIndex(({ nombre }) => nombre === editingSourceName); 
   if (index >= 0) cards[index] = new FuenteFinanciamiento(editingSourceName, cutoff || 15, due || 15, type, days); else if (cards.some((source) => source.nombre.toLocaleLowerCase() === name.toLocaleLowerCase())) { error.textContent = "Ya existe una fuente con ese nombre."; return; } else cards.push(new FuenteFinanciamiento(name, cutoff || 15, due || 15, type, days)); 
-  writeStorage(STORAGE_KEYS.cards, cards); touchUpdatedAt(); error.textContent = ""; closeSourceModal(); render(); 
+  saveToCloud(); 
+  error.textContent = ""; 
+  closeSourceModal(); 
+  render(); 
 });
 
 renderPokemonEasterEgg(); 
 setInterval(renderPokemonEasterEgg, 30000); 
 
-render();
+// Sincronización en tiempo real con Firestore
+docRef.onSnapshot((snapshot) => {
+  if (snapshot.exists) {
+    const data = snapshot.data();
+    if (Array.isArray(data.cards)) {
+      cards = data.cards.map((c) => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago));
+      writeStorage(STORAGE_KEYS.cards, cards);
+    }
+    if (Array.isArray(data.purchases)) {
+      purchases = data.purchases.map((d) => new Compra(d));
+      writeStorage(STORAGE_KEYS.purchases, purchases);
+    }
+    if (data.updatedAt) {
+      localStorage.setItem(STORAGE_KEYS.updatedAt, data.updatedAt);
+    }
+    render();
+  } else {
+    // Si es la primera vez y la nube no tiene datos, sube los datos locales
+    saveToCloud();
+  }
+}, (error) => {
+  console.error("Error al sincronizar con Firestore:", error);
+  render();
+});
