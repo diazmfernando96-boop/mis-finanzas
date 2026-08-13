@@ -1,4 +1,22 @@
 const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
+
+// 1. Configuración de Firebase (pega aquí las claves que copiaste de Firebase)
+const firebaseConfig = {
+  apiKey: "AIzaSyDCJnGNyd838CEaEB6tu4Y01X3ZUD3sCH0",
+  authDomain: "mis-finanzas-5f1f5.firebaseapp.com",
+  projectId: "mis-finanzas-5f1f5",
+  storageBucket: "mis-finanzas-5f1f5.appspot.com",
+  messagingSenderId: "665281319781",
+  appId: "1:665281319781:web:cb16f907766e3184f8078c"
+};
+
+// 2. Inicializar Firebase y referencia a la base de datos
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const docRef = db.collection("finanzas").doc("mi_dashboard");
+
+
+const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const dateFormatter = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short" });
 const monthFormatter = new Intl.DateTimeFormat("es-MX", { month: "short" });
