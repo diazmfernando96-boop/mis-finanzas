@@ -43,6 +43,23 @@ const touchUpdatedAt = () => localStorage.setItem(STORAGE_KEYS.updatedAt, new Da
 const storageWasEmpty = localStorage.length === 0;
 let cards = readStorage(STORAGE_KEYS.cards, []);
 
+async function saveToCloud() {
+  const timestamp = new Date().toISOString();
+  localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
+  localStorage.setItem(STORAGE_KEYS.purchases, JSON.stringify(purchases));
+  localStorage.setItem(STORAGE_KEYS.updatedAt, timestamp);
+
+  try {
+    await docRef.set({
+      cards: cards,
+      purchases: purchases.map(p => ({ ...p })),
+      updatedAt: timestamp
+    });
+  } catch (err) {
+    console.error("Error al guardar en Firestore:", err);
+  }
+}
+
 const fuentesRequeridas = [
   new FuenteFinanciamiento("BBVA ORO", 15, 5, "tarjeta"),
   new FuenteFinanciamiento("BBVA AZUL", 15, 5, "tarjeta"),
