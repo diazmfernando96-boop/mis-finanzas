@@ -8,10 +8,14 @@ const firebaseConfig = {
   appId: "1:665281319781:web:cb16f907766e3184f8078c"
 };
 
-// 2. Inicializar Firebase y referencia a Firestore
+// 2. Inicializar Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const docRef = db.collection("finanzas").doc("mi_dashboard");
+const auth = firebase.auth();
+
+let currentUser = null;
+let userDocRef = null;
+let unsubscribeFirestore = null;
 
 const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
@@ -36,18 +40,19 @@ function normalizePaymentDays(days) { return [...new Set((Array.isArray(days) ? 
 const readStorage = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return Array.isArray(value) ? value : fallback; } catch { return fallback; } };
 const writeStorage = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
-const storageWasEmpty = localStorage.length === 0;
-let cards = readStorage(STORAGE_KEYS.cards, []);
+let cards = [];
+let purchases = [];
 
-// Función centralizada para guardar en LocalStorage y Firestore en la nube
+// Función para guardar en el espacio del usuario actual
 async function saveToCloud() {
+  if (!userDocRef) return;
   const timestamp = new Date().toISOString();
   localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
   localStorage.setItem(STORAGE_KEYS.purchases, JSON.stringify(purchases));
   localStorage.setItem(STORAGE_KEYS.updatedAt, timestamp);
 
   try {
-    await docRef.set({
+    await userDocRef.set({
       cards: cards.map(c => ({ ...c })),
       purchases: purchases.map(p => ({ ...p })),
       updatedAt: timestamp
@@ -56,34 +61,6 @@ async function saveToCloud() {
     console.error("Error al guardar en Firestore:", err);
   }
 }
-
-const fuentesRequeridas = [
-  new FuenteFinanciamiento("BBVA ORO", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("BBVA AZUL", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("DIDI CARD", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("MP TDC", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("NU TDC", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento('PROMODA "BRADESCARD"', 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("PLATA CARD", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("MP Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("DIDI Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("NU Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("Liverpool Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("LIVERPOOL", 15, 5, "departamental"),
-  new FuenteFinanciamiento("PALACIO DE HIERRO", 15, 5, "departamental"),
-  new FuenteFinanciamiento("SANBORNS", 15, 5, "departamental"),
-  new FuenteFinanciamiento("SEARS", 15, 5, "departamental")
-];
-fuentesRequeridas.forEach(reqCard => {
-  if (!cards.some(c => c.nombre.toLowerCase() === reqCard.nombre.toLowerCase())) cards.push(reqCard);
-});
-writeStorage(STORAGE_KEYS.cards, cards);
-
-let purchases = readStorage(STORAGE_KEYS.purchases, []).map((data) => new Compra(data));
-
-const HISTORICAL_PURCHASES = [{ compra: "LIVERPOOL PANTALLA", monto: 387 }, { compra: "COLCHON SEARS", monto: 354 }, { compra: "PROMODA", monto: 417 }, { compra: "PRESTAMO MP", monto: 429.5 }, { compra: "DIDI PRESTAMOS", monto: 964.95 }, { compra: "PRESTAMO NU", monto: 4134 }, { compra: "MOCHILA", monto: 1393 }, { compra: "PC", monto: 5377 }, { compra: "CELULAR", monto: 17388 }, { compra: "SMARTWATCH", monto: 3601 }, { compra: "SEGURO", monto: 4885 }, { compra: "BICICLETA", monto: 5205 }, { compra: "MITSUBISHI", monto: 141250 }];
-function migrateHistoricalPurchasesIfNeeded() { if (!storageWasEmpty || !cards[0]) return; purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: cards[0].nombre, mesesSinIntereses: 1 })); saveToCloud(); }
-migrateHistoricalPurchasesIfNeeded();
 
 const createDate = (year, month, day) => new Date(year, month, Math.min(day, new Date(year, month + 1, 0).getDate()));
 const localDateValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -119,47 +96,31 @@ function renderUpdatedBadge() { const raw = localStorage.getItem(STORAGE_KEYS.up
 
 function renderPokemonEasterEgg() { 
   const layer = document.querySelector("#pokemon-layer"); 
+  if (!layer) return;
   layer.style.opacity = '0';
-  
   setTimeout(() => {
     const count = Math.floor(Math.random() * 5) + 10; 
     const usedIds = new Set(); 
     while (usedIds.size < count) usedIds.add(Math.floor(Math.random() * 151) + 1); 
-
     const edgeSlots = [
       { edge: 'top', pos: 15 }, { edge: 'top', pos: 35 }, { edge: 'top', pos: 65 }, { edge: 'top', pos: 85 },
       { edge: 'bottom', pos: 15 }, { edge: 'bottom', pos: 35 }, { edge: 'bottom', pos: 65 }, { edge: 'bottom', pos: 85 },
       { edge: 'left', pos: 5 }, { edge: 'left', pos: 15 }, { edge: 'left', pos: 25 }, { edge: 'left', pos: 35 }, { edge: 'left', pos: 45 }, { edge: 'left', pos: 55 }, { edge: 'left', pos: 65 }, { edge: 'left', pos: 75 }, { edge: 'left', pos: 85 }, { edge: 'left', pos: 95 },
       { edge: 'right', pos: 5 }, { edge: 'right', pos: 15 }, { edge: 'right', pos: 25 }, { edge: 'right', pos: 35 }, { edge: 'right', pos: 45 }, { edge: 'right', pos: 55 }, { edge: 'right', pos: 65 }, { edge: 'right', pos: 75 }, { edge: 'right', pos: 85 }, { edge: 'right', pos: 95 }
     ];
-    
     const shuffledSlots = edgeSlots.sort(() => 0.5 - Math.random()).slice(0, count);
-
     layer.innerHTML = [...usedIds].map((id, index) => {
       const slot = shuffledSlots[index];
-      let style = "";
-      let animClass = "";
       const delay = (Math.random() * 4).toFixed(2); 
       const variation = (Math.random() * 4 - 2).toFixed(2);
       const finalPos = slot.pos + Number(variation);
-
-      if (slot.edge === 'top') {
-        style = `top: -50px; left: ${finalPos}%;`;
-        animClass = "pokemon-peek-top";
-      } else if (slot.edge === 'bottom') {
-        style = `bottom: -50px; left: ${finalPos}%;`;
-        animClass = "pokemon-peek-bottom";
-      } else if (slot.edge === 'left') {
-        style = `top: ${finalPos}%; left: -50px;`;
-        animClass = "pokemon-peek-left";
-      } else {
-        style = `top: ${finalPos}%; right: -50px;`;
-        animClass = "pokemon-peek-right";
-      }
-
+      let style = "", animClass = "";
+      if (slot.edge === 'top') { style = `top: -50px; left: ${finalPos}%;`; animClass = "pokemon-peek-top"; }
+      else if (slot.edge === 'bottom') { style = `bottom: -50px; left: ${finalPos}%;`; animClass = "pokemon-peek-bottom"; }
+      else if (slot.edge === 'left') { style = `top: ${finalPos}%; left: -50px;`; animClass = "pokemon-peek-left"; }
+      else { style = `top: ${finalPos}%; right: -50px;`; animClass = "pokemon-peek-right"; }
       return `<img class="pokemon ${animClass}" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${id}.gif" style="${style} animation-delay: ${delay}s;" alt="" />`;
     }).join(""); 
-    
     layer.style.opacity = '1';
   }, 600); 
 }
@@ -278,30 +239,100 @@ sourceForm.addEventListener("submit", (event) => {
   render(); 
 });
 
-renderPokemonEasterEgg(); 
-setInterval(renderPokemonEasterEgg, 30000); 
+// --- Lógica de Autenticación de Usuarios ---
+const authScreen = document.querySelector("#auth-screen");
+const mainApp = document.querySelector("#main-app");
+const bottomNav = document.querySelector("#bottom-nav");
+const authForm = document.querySelector("#auth-form");
+const authTitle = document.querySelector("#auth-title");
+const authSubmit = document.querySelector("#auth-submit");
+const toggleAuthMode = document.querySelector("#toggle-auth-mode");
+const authError = document.querySelector("#auth-error");
+const userDisplay = document.querySelector("#user-display");
+const logoutButton = document.querySelector("#logout-button");
 
-// Sincronización en tiempo real con Firestore
-docRef.onSnapshot((snapshot) => {
-  if (snapshot.exists) {
-    const data = snapshot.data();
-    if (Array.isArray(data.cards)) {
-      cards = data.cards.map((c) => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago));
-      writeStorage(STORAGE_KEYS.cards, cards);
-    }
-    if (Array.isArray(data.purchases)) {
-      purchases = data.purchases.map((d) => new Compra(d));
-      writeStorage(STORAGE_KEYS.purchases, purchases);
-    }
-    if (data.updatedAt) {
-      localStorage.setItem(STORAGE_KEYS.updatedAt, data.updatedAt);
-    }
-    render();
-  } else {
-    // Si es la primera vez y la nube no tiene datos, sube los datos locales
-    saveToCloud();
-  }
-}, (error) => {
-  console.error("Error al sincronizar con Firestore:", error);
-  render();
+let isRegisterMode = false;
+
+toggleAuthMode.addEventListener("click", () => {
+  isRegisterMode = !isRegisterMode;
+  authTitle.textContent = isRegisterMode ? "Crear cuenta" : "Iniciar sesión";
+  authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
+  toggleAuthMode.textContent = isRegisterMode ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate";
+  authError.textContent = "";
 });
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.querySelector("#auth-email").value.trim();
+  const password = document.querySelector("#auth-password").value;
+  authError.textContent = "";
+
+  try {
+    if (isRegisterMode) {
+      await auth.createUserWithEmailAndPassword(email, password);
+    } else {
+      await auth.signInWithEmailAndPassword(email, password);
+    }
+  } catch (err) {
+    authError.textContent = err.message || "Error al autenticar. Verifica tus datos.";
+  }
+});
+
+logoutButton.addEventListener("click", () => {
+  auth.signOut();
+});
+
+// Escuchar cambios de sesión de usuario
+auth.onAuthStateChanged((user) => {
+  if (unsubscribeFirestore) {
+    unsubscribeFirestore();
+    unsubscribeFirestore = null;
+  }
+
+  if (user) {
+    currentUser = user;
+    userDocRef = db.collection("users").doc(user.uid);
+    authScreen.style.display = "none";
+    mainApp.style.display = "block";
+    bottomNav.style.display = "flex";
+    userDisplay.textContent = user.email || "Mi cuenta";
+
+    // Escucha en tiempo real de la base de datos exclusiva del usuario
+    unsubscribeFirestore = userDocRef.onSnapshot((snapshot) => {
+      if (snapshot.exists) {
+        const data = snapshot.data();
+        cards = Array.isArray(data.cards) ? data.cards.map((c) => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago)) : [];
+        purchases = Array.isArray(data.purchases) ? data.purchases.map((d) => new Compra(d)) : [];
+        if (data.updatedAt) localStorage.setItem(STORAGE_KEYS.updatedAt, data.updatedAt);
+        render();
+      } else {
+        // Base de datos en blanco para usuario nuevo
+        cards = [];
+        purchases = [];
+        saveToCloud();
+        render();
+      }
+    }, (error) => {
+      console.error("Error en Firestore:", error);
+    });
+
+  } else {
+    currentUser = null;
+    userDocRef = null;
+    cards = [];
+    purchases = [];
+    authScreen.style.display = "grid";
+    mainApp.style.display = "none";
+    bottomNav.style.display = "none";
+  }
+});
+
+// Registrar Service Worker para PWA (App Móvil)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((err) => console.log("SW error:", err));
+  });
+}
+
+renderPokemonEasterEgg(); 
+setInterval(renderPokemonEasterEgg, 30000);
