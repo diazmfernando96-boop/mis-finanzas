@@ -41,7 +41,57 @@ th { color: #858ba2; font-size: .67rem; letter-spacing: .08em; text-transform: u
 th, td { padding: 12px 6px; white-space: nowrap; } 
 tr + tr { border-top: 1px solid rgb(255 255 255 / 6%); }
 
-.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+/* ===================================================
+   BARRA DE DESPLAZAMIENTO FLOTANTE Y TRANSLÚCIDA
+   =================================================== */
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  padding-bottom: 8px; /* Espacio para que levite sobre la tabla */
+}
+
+/* Tamaño de la barra (6px delgada y elegante) */
+.table-scroll::-webkit-scrollbar,
+::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+  background: transparent;
+}
+
+/* Pista de desplazamiento transparente */
+.table-scroll::-webkit-scrollbar-track,
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 999px;
+  margin: 0 12px;
+}
+
+/* Barra flotante tipo píldora y semi-transparente */
+.table-scroll::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.2s ease;
+}
+
+/* Efecto al pasar el cursor o deslizar */
+.table-scroll::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.5); /* Tono violeta sutil */
+}
+
+/* Eliminar las flechas toscas de las esquinas */
+.table-scroll::-webkit-scrollbar-button,
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
 
 .breakdown-panel { min-width: 100%; }
 .breakdown-table td:first-child { color: #a78bfa; font-weight: 800; }
