@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Finanzas personales | Dashboard</title>
     <link rel="manifest" href="manifest.json" />
-    <link rel="stylesheet" href="styles.css?v=7" />
+    <link rel="stylesheet" href="styles.css?v=11" />
   </head>
   <body>
     <div id="pokemon-layer" aria-hidden="true"></div>
@@ -50,21 +50,12 @@
           <h1>Mi Dashboard</h1>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
-          <button class="text-button" id="open-salary-modal" type="button" style="color: #a78bfa; font-size: 0.85rem;">💼 Sueldo</button>
           <button class="text-button" id="logout-button" type="button" style="color: #fca5a5; font-size: 0.85rem;">Cerrar sesión</button>
           <button class="primary-button" id="open-purchase-modal" type="button">+ Registrar compra</button>
         </div>
       </header>
 
-      <!-- Banner de Alerta de Quincena -->
-      <div id="fortnight-banner" style="display: none; background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(59,130,246,0.15)); border: 1px solid rgba(139,92,246,0.4); border-radius: 16px; padding: 14px 18px; margin-bottom: 18px; align-items: center; justify-content: space-between; gap: 12px;">
-        <div>
-          <strong style="color: #fff; font-size: 0.95rem;" id="banner-title">🔔 ¡Día de cobro de quincena!</strong>
-          <p style="color: #cbd5e1; font-size: 0.82rem; margin-top: 2px;" id="banner-subtitle">Confirma o ingresa el dinero que recibiste para calcular tu dinero libre de pagos.</p>
-        </div>
-        <button class="primary-button" id="banner-action-btn" type="button" style="white-space: nowrap; padding: 6px 14px; font-size: 0.85rem;">Registrar ingreso</button>
-      </div>
-
+      <!-- VISTA 1: DASHBOARD PRINCIPAL -->
       <section class="view" id="dashboard-view" role="tabpanel" aria-labelledby="tab-dashboard">
       <div class="dashboard-with-totals">
       <section class="dashboard-grid" aria-label="Resumen de finanzas">
@@ -78,23 +69,24 @@
           <div class="line-wrap"><canvas id="flow-chart" aria-label="Proyección de pagos de los próximos tres meses"></canvas></div>
         </article>
 
-        <!-- Tarjetas de Control Quincenal y Sueldo -->
+        <!-- Tarjeta de Saldo Total Restante -->
         <article class="panel balance-panel">
-          <p class="panel-label">Ingreso de esta quincena</p>
-          <p class="amount" id="current-income-display" style="color: #a78bfa;">$0.00</p>
-          <span class="trend" id="income-status-detail">Toca "💼 Sueldo" para configurar</span>
+          <p class="panel-label">Saldo por pagar</p>
+          <p class="amount" id="total-balance">$0.00</p>
+          <span class="trend" id="balance-detail">Sin compras registradas</span>
         </article>
 
-        <article class="panel balance-panel" style="border: 1px solid rgba(16, 185, 129, 0.3);">
-          <p class="panel-label">Dinero libre disponible</p>
-          <p class="amount" id="available-cash-display" style="color: #10b981;">$0.00</p>
-          <span class="trend" id="available-cash-detail">Después de pagos de la quincena</span>
+        <!-- Tarjeta de Cobro Quincena del 15 -->
+        <article class="panel balance-panel" style="border: 1px solid rgba(139, 92, 246, 0.35);">
+          <p class="panel-label">Cobro quincena del 15</p>
+          <p class="amount" id="fortnight-15-display" style="color: #a78bfa;">$0.00</p>
+          <span class="trend" id="fortnight-15-detail">0 pagos al día 15</span>
         </article>
 
         <article class="panel">
-          <p class="panel-label">Cobro en esta quincena</p>
-          <p class="amount" id="fortnight-debt-display">$0.00</p>
-          <span class="muted" id="fortnight-debt-detail">0 pagos a liquidar</span>
+          <p class="panel-label">Compras a MSI</p>
+          <p class="amount" id="msi-count">0</p>
+          <span class="muted" id="financed-total">$0.00 financiados</span>
         </article>
 
         <article class="panel">
@@ -135,15 +127,11 @@
         <h2>Totales y alertas</h2>
         <section class="total-card"><p>Total deuda global</p><strong id="global-debt">$0.00</strong><span id="global-debt-detail">0 compras activas</span></section>
         <section class="alert-card"><p class="panel-label">Urgente por pagar</p><strong id="urgent-date">Sin cortes próximos</strong><span id="urgent-card">—</span><b id="urgent-amount">$0.00</b><small>Mensualidades a cubrir en este ciclo de corte.</small></section>
-        
-        <section class="total-card" style="background: rgba(139,92,246,0.1); border: 1px dashed rgba(139,92,246,0.35);">
-          <p>Notificaciones Push</p>
-          <button class="text-button" id="enable-notifications-btn" type="button" style="color: #c4b5fd; margin-top: 6px; padding: 0;">🔔 Activar avisos de quincena</button>
-        </section>
       </aside>
       </div>
       </section>
 
+      <!-- VISTA 2: DESGLOSE DE PAGOS -->
       <section class="view" id="breakdown-view" role="tabpanel" aria-labelledby="tab-breakdown" hidden>
         <article class="panel breakdown-panel">
           <div class="panel-heading"><div><p class="panel-label">Cronograma de amortización</p><h2>Desglose de pagos</h2></div><span class="muted">Parcialidades futuras ordenadas por fecha</span></div>
@@ -154,6 +142,62 @@
         </article>
       </section>
 
+      <!-- VISTA 3: NUEVA PANTALLA DE SUELDO Y FLUJO QUINCENAL -->
+      <section class="view" id="salary-view" role="tabpanel" aria-labelledby="tab-salary" hidden>
+        <div class="dashboard-grid" style="margin-bottom: 20px;">
+          <!-- Panel de Configuración de Sueldo -->
+          <article class="panel wide-panel" style="background: #161622;">
+            <div class="panel-heading">
+              <div><p class="panel-label">Configuración de ingresos</p><h2>Control de Sueldo Quincenal</h2></div>
+            </div>
+            <form id="salary-config-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 10px;">
+              <label>Sueldo base quincenal estimado
+                <input id="salary-base-input" name="baseSalary" type="number" min="0" step="0.01" placeholder="0.00" required />
+              </label>
+              <label>Ingreso real recibido esta quincena
+                <input id="salary-income-input" name="currentIncome" type="number" min="0" step="0.01" placeholder="0.00" required />
+              </label>
+              <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end;">
+                <button class="primary-button" type="submit">Actualizar sueldo</button>
+              </div>
+            </form>
+          </article>
+
+          <!-- Indicadores de Liquidez de la Quincena -->
+          <article class="panel balance-panel">
+            <p class="panel-label">Ingreso de esta quincena</p>
+            <p class="amount" id="salary-income-display" style="color: #a78bfa;">$0.00</p>
+            <span class="trend" id="salary-income-base-detail">Base estimada</span>
+          </article>
+
+          <article class="panel">
+            <p class="panel-label">Cobros a liquidar este ciclo</p>
+            <p class="amount" id="salary-fortnight-debt-display">$0.00</p>
+            <span class="muted" id="salary-fortnight-debt-detail">0 pagos asignados</span>
+          </article>
+
+          <article class="panel balance-panel" style="border: 1px solid rgba(16, 185, 129, 0.4);">
+            <p class="panel-label">Dinero libre disponible</p>
+            <p class="amount" id="salary-available-cash-display" style="color: #10b981;">$0.00</p>
+            <span class="trend" id="salary-available-cash-detail">Restante tras cubrir pagos</span>
+          </article>
+        </div>
+
+        <!-- Tabla de Pagos de la Quincena en Curso -->
+        <article class="panel wide-panel">
+          <div class="panel-heading">
+            <div><p class="panel-label">Compromisos</p><h2>Pagos que descuenta esta quincena</h2></div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Fecha de pago</th><th>Concepto</th><th>Tarjeta / Fuente</th><th>Monto</th></tr></thead>
+              <tbody id="salary-payments-table-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <!-- VISTA 4: ADMINISTRAR -->
       <section class="view" id="manage-view" role="tabpanel" aria-labelledby="tab-manage" hidden>
         <article class="panel manage-panel">
           <div class="panel-heading"><div><p class="panel-label">Datos guardados</p><h2>Administrar compras</h2></div><button class="primary-button" id="manage-add-purchase" type="button">+ Nueva compra</button></div>
@@ -173,29 +217,14 @@
       </div>
     </main>
 
+    <!-- Barra de Navegación Inferior (Con la nueva pestaña Sueldo) -->
     <nav class="bottom-nav" id="bottom-nav" role="tablist" aria-label="Navegación principal" style="display: none;">
       <button class="tab is-active" id="tab-dashboard" role="tab" aria-selected="true" aria-controls="dashboard-view" data-view="dashboard-view" type="button"><span class="nav-icon">◉</span><span>Dashboard</span></button>
       <button class="tab" id="tab-breakdown" role="tab" aria-selected="false" aria-controls="breakdown-view" data-view="breakdown-view" type="button"><span class="nav-icon">⌁</span><span>Desglose</span></button>
+      <button class="tab" id="tab-salary" role="tab" aria-selected="false" aria-controls="salary-view" data-view="salary-view" type="button"><span class="nav-icon">💼</span><span>Sueldo</span></button>
       <button class="tab" id="tab-manage" role="tab" aria-selected="false" aria-controls="manage-view" data-view="manage-view" type="button"><span class="nav-icon">▦</span><span>Administrar</span></button>
     </nav>
     
-    <!-- Modal para Configuración de Sueldo e Ingreso Quincenal -->
-    <div class="modal" id="salary-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="salary-modal-title">
-      <div class="modal-card">
-        <div class="modal-header"><h2 id="salary-modal-title">Sueldo e Ingreso Quincenal</h2><button class="close-button" id="close-salary-modal" type="button" aria-label="Cerrar">×</button></div>
-        <form id="salary-form">
-          <label>Sueldo base quincenal estimado
-            <input id="base-salary" name="baseSalary" type="number" min="0" step="0.01" placeholder="Ej. 10000.00" required />
-          </label>
-          <label>Ingreso real recibido esta quincena
-            <input id="current-income" name="currentIncome" type="number" min="0" step="0.01" placeholder="Ej. 10500.00" required />
-          </label>
-          <span class="field-help" style="color: #94a3b8; font-size: 0.78rem; display: block; margin-top: -6px; margin-bottom: 12px;">Se usará para restar los pagos del ciclo y mostrar tu dinero disponible.</span>
-          <div class="modal-actions"><button class="text-button" id="cancel-salary" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar sueldo</button></div>
-        </form>
-      </div>
-    </div>
-
     <!-- Modal Registrar Compra -->
     <div class="modal" id="purchase-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-card">
@@ -267,6 +296,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- Script de la aplicación -->
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=11"></script>
   </body>
 </html>
