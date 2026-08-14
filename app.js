@@ -204,42 +204,82 @@ function renderUpdatedBadge() { const raw = localStorage.getItem(STORAGE_KEYS.up
 
 // Determinar si un pago cae en la quincena actual
 function isPaymentInCurrentFortnight(paymentDate, today) {
-  if (paymentDate.getFullYear() !== today.getFullYear() || paymentDate.getMonth() !== today.getMonth()) return false;
   const currentDay = today.getDate();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+  
   const payDay = paymentDate.getDate();
+  const payMonth = paymentDate.getMonth();
+  const payYear = paymentDate.getFullYear();
+  
   if (currentDay <= 15) {
-    return payDay <= 15;
+    return payYear === currentYear && payMonth === currentMonth && payDay <= 15;
   } else {
-    return payDay > 15;
+    const isSameMonthEnd = (payYear === currentYear && payMonth === currentMonth && payDay > 15);
+    const nextMonthDate = new Date(currentYear, currentMonth + 1, 1);
+    const isNextMonthStart = (payYear === nextMonthDate.getFullYear() && payMonth === nextMonthDate.getMonth() && payDay <= 14);
+    return isSameMonthEnd || isNextMonthStart;
   }
 }
 
-// Alerta y notificación inteligente de quincena
+// Alerta y notificación de quincena
 function checkFortnightNotification(today) {
   const day = today.getDate();
   const banner = document.querySelector("#fortnight-banner");
   const bannerTitle = document.querySelector("#banner-title");
   const bannerSubtitle = document.querySelector("#banner-subtitle");
   
-  // Días de cobro: 14, 15, 16 o fin de mes (28, 29, 30, 31, 1)
   const isPayday = (day >= 14 && day <= 16) || day >= 28 || day === 1;
 
-  if (isPayday) {
-    banner.style.display = "flex";
-    const periodo = day <= 16 ? "Quincena del 15" : "Quincena de fin de mes / día 1";
-    bannerTitle.textContent = `🔔 ¡Cobro de ${periodo}!`;
-    bannerSubtitle.textContent = `Registra el ingreso recibido para calcular cuánto dinero libre te queda tras cubrir los pagos de esta quincena.`;
-    
-    // Si tiene permiso de notificación del navegador y es exactamente día 15 o 30/31/1
-    if ((day === 15 || day === 30 || day === 31 || day === 1) && window.Notification && Notification.permission === "granted") {
-      new Notification("Finanzas Personales - Recordatorio de Quincena", {
-        body: `Hoy es día de cobro (${periodo}). Revisa tus pagos programados y registra tu ingreso.`,
-        icon: "https://cdn-icons-png.flaticon.com/512/2830/2830284.png"
-      });
+  if (banner) {
+    if (isPayday) {
+      banner.style.display = "flex";
+      const periodo = day <= 16 ? "Quincena del 15" : "Quincena de fin de mes / día 1";
+      if (bannerTitle) bannerTitle.textContent = `🔔 ¡Cobro de ${periodo}!`;
+      if (bannerSubtitle) bannerSubtitle.textContent = `Registra tu ingreso para calcular tu dinero disponible después de pagos.`;
+      
+      if ((day === 15 || day === 30 || day === 31 || day === 1) && window.Notification && Notification.permission === "granted") {
+        new Notification("Finanzas Personales - Recordatorio de Quincena", {
+          body: `Hoy es día de cobro (${periodo}). Revisa tus pagos programados y registra tu ingreso.`,
+          icon: "https://cdn-icons-png.flaticon.com/512/2830/2830284.png"
+        });
+      }
+    } else {
+      banner.style.display = "none";
     }
-  } else {
-    banner.style.display = "none";
   }
+}
+
+// Animación de Pokémon
+function renderPokemonEasterEgg() { 
+  const layer = document.querySelector("#pokemon-layer"); 
+  if (!layer) return;
+  layer.style.opacity = '0';
+  setTimeout(() => {
+    const count = Math.floor(Math.random() * 5) + 10; 
+    const usedIds = new Set(); 
+    while (usedIds.size < count) usedIds.add(Math.floor(Math.random() * 151) + 1); 
+    const edgeSlots = [
+      { edge: 'top', pos: 15 }, { edge: 'top', pos: 35 }, { edge: 'top', pos: 65 }, { edge: 'top', pos: 85 },
+      { edge: 'bottom', pos: 15 }, { edge: 'bottom', pos: 35 }, { edge: 'bottom', pos: 65 }, { edge: 'bottom', pos: 85 },
+      { edge: 'left', pos: 5 }, { edge: 'left', pos: 15 }, { edge: 'left', pos: 25 }, { edge: 'left', pos: 35 }, { edge: 'left', pos: 45 }, { edge: 'left', pos: 55 }, { edge: 'left', pos: 65 }, { edge: 'left', pos: 75 }, { edge: 'left', pos: 85 }, { edge: 'left', pos: 95 },
+      { edge: 'right', pos: 5 }, { edge: 'right', pos: 15 }, { edge: 'right', pos: 25 }, { edge: 'right', pos: 35 }, { edge: 'right', pos: 45 }, { edge: 'right', pos: 55 }, { edge: 'right', pos: 65 }, { edge: 'right', pos: 75 }, { edge: 'right', pos: 85 }, { edge: 'right', pos: 95 }
+    ];
+    const shuffledSlots = edgeSlots.sort(() => 0.5 - Math.random()).slice(0, count);
+    layer.innerHTML = [...usedIds].map((id, index) => {
+      const slot = shuffledSlots[index];
+      const delay = (Math.random() * 4).toFixed(2); 
+      const variation = (Math.random() * 4 - 2).toFixed(2);
+      const finalPos = slot.pos + Number(variation);
+      let style = "", animClass = "";
+      if (slot.edge === 'top') { style = `top: -50px; left: ${finalPos}%;`; animClass = "pokemon-peek-top"; }
+      else if (slot.edge === 'bottom') { style = `bottom: -50px; left: ${finalPos}%;`; animClass = "pokemon-peek-bottom"; }
+      else if (slot.edge === 'left') { style = `top: ${finalPos}%; left: -50px;`; animClass = "pokemon-peek-left"; }
+      else { style = `top: ${finalPos}%; right: -50px;`; animClass = "pokemon-peek-right"; }
+      return `<img class="pokemon ${animClass}" loading="lazy" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${id}.gif" style="${style} animation-delay: ${delay}s;" alt="" />`;
+    }).join(""); 
+    layer.style.opacity = '1';
+  }, 600); 
 }
 
 function renderCharts(payments, total, today) {
@@ -259,15 +299,15 @@ function renderTotalsAndAlert(payments, total) { document.querySelector("#global
 function render() {
   const today = startOfToday(), payments = allPayments(), total = purchases.reduce((sum, purchase) => sum + remainingBalance(purchase), 0), next = [...payments].sort((a, b) => a.date - b.date)[0];
   
-  // Cálculo específico de pagos correspondientes a esta quincena
+  // Cálculo de pagos asignados a la quincena actual
   const currentFortnightPayments = payments.filter(p => isPaymentInCurrentFortnight(p.date, today));
   const fortnightDebtTotal = currentFortnightPayments.reduce((sum, p) => sum + p.amount, 0);
   
-  // Ingreso efectivo de la quincena (ingreso real o sueldo base)
+  // Ingreso efectivo de la quincena
   const effectiveIncome = Number(salaryConfig.currentIncome) || Number(salaryConfig.baseSalary) || 0;
   const availableCash = effectiveIncome - fortnightDebtTotal;
 
-  // Actualizar indicadores de sueldo y dinero libre
+  // Actualizar paneles de sueldo y dinero libre
   document.querySelector("#current-income-display").textContent = money.format(effectiveIncome);
   document.querySelector("#income-status-detail").textContent = salaryConfig.baseSalary ? `Base: ${money.format(salaryConfig.baseSalary)} / quincena` : 'Toca "💼 Sueldo" para configurar';
 
@@ -326,14 +366,19 @@ function openPurchaseModal(purchase = null) {
 
 function closeSourceModal() { sourceModal.classList.remove("is-open"); sourceModal.setAttribute("aria-hidden", "true"); editingSourceName = null; }
 function toggleSourceFields() { const loan = document.querySelector("#source-type").value === "prestamo"; document.querySelector("#credit-fields").hidden = loan; document.querySelector("#loan-fields").hidden = !loan; document.querySelector("#card-cutoff").required = !loan; document.querySelector("#card-due").required = !loan; document.querySelector("#loan-payment-days").required = loan; }
+
+// Apertura de modal con campo de nombre editable
 function openSourceModal(source = null) { 
   editingSourceName = source?.nombre ?? null; 
   sourceForm.reset(); 
   document.querySelector("#card-modal-title").textContent = source ? "Editar fuente" : "Registrar fuente"; 
   document.querySelector("#save-card").textContent = source ? "Guardar cambios" : "Guardar fuente"; 
-  document.querySelector("#card-name").disabled = Boolean(source); 
+  
+  const nameInput = document.querySelector("#card-name");
+  nameInput.disabled = false; // Habilitado para permitir edición
+  
   if (source) { 
-    document.querySelector("#card-name").value = source.nombre; 
+    nameInput.value = source.nombre; 
     document.querySelector("#source-type").value = source.tipo; 
     document.querySelector("#card-cutoff").value = source.diaCorte; 
     document.querySelector("#card-due").value = source.diaLimitePago; 
@@ -342,7 +387,7 @@ function openSourceModal(source = null) {
   toggleSourceFields(); 
   sourceModal.classList.add("is-open"); 
   sourceModal.setAttribute("aria-hidden", "false"); 
-  document.querySelector(source ? "#source-type" : "#card-name").focus(); 
+  nameInput.focus(); 
 }
 
 function closeSalaryModal() { salaryModal.classList.remove("is-open"); salaryModal.setAttribute("aria-hidden", "true"); }
@@ -354,7 +399,7 @@ function openSalaryModal() {
   document.querySelector("#current-income").focus();
 }
 
-// Botones y eventos de apertura/cierre
+// Botones y eventos
 document.querySelector("#open-purchase-modal").addEventListener("click", () => openPurchaseModal()); 
 document.querySelector("#manage-add-purchase").addEventListener("click", () => openPurchaseModal()); 
 document.querySelector("#close-purchase-modal").addEventListener("click", closePurchaseModal); 
@@ -373,7 +418,7 @@ document.querySelector("#cancel-salary").addEventListener("click", closeSalaryMo
 document.querySelector("#banner-action-btn").addEventListener("click", openSalaryModal);
 salaryModal.addEventListener("click", (event) => { if (event.target === salaryModal) closeSalaryModal(); });
 
-// Solicitar permisos de notificación push
+// Activar notificaciones del navegador
 document.querySelector("#enable-notifications-btn").addEventListener("click", async () => {
   if (!("Notification" in window)) {
     alert("Este navegador no soporta notificaciones de escritorio.");
@@ -437,19 +482,56 @@ document.querySelector("#manage-cards-table-body").addEventListener("click", (ev
   } 
 });
 
+// Guardar fuente con soporte para renombrar y actualizar compras asociadas
 sourceForm.addEventListener("submit", (event) => { 
   event.preventDefault(); 
-  const data = new FormData(sourceForm), name = editingSourceName ?? data.get("nombre").trim(), type = data.get("tipo"), cutoff = Number(data.get("corte")), due = Number(data.get("limite")), days = normalizePaymentDays(data.get("diasPago")), error = document.querySelector("#card-form-error"); 
-  if (!name || ((type === "tarjeta" || type === "departamental") && (!Number.isInteger(cutoff) || cutoff < 1 || cutoff > 31 || !Number.isInteger(due) || due < 1 || due > 31)) || (type === "prestamo" && !days.length)) { error.textContent = "Completa los datos de la fuente correctamente."; return; } 
-  const index = cards.findIndex(({ nombre }) => nombre === editingSourceName); 
-  if (index >= 0) cards[index] = new FuenteFinanciamiento(editingSourceName, cutoff || 15, due || 15, type, days); else if (cards.some((source) => source.nombre.toLocaleLowerCase() === name.toLocaleLowerCase())) { error.textContent = "Ya existe una fuente con ese nombre."; return; } else cards.push(new FuenteFinanciamiento(name, cutoff || 15, due || 15, type, days)); 
+  const data = new FormData(sourceForm);
+  const newName = data.get("nombre").trim();
+  const type = data.get("tipo");
+  const cutoff = Number(data.get("corte"));
+  const due = Number(data.get("limite"));
+  const days = normalizePaymentDays(data.get("diasPago"));
+  const error = document.querySelector("#card-form-error"); 
+
+  if (!newName || ((type === "tarjeta" || type === "departamental") && (!Number.isInteger(cutoff) || cutoff < 1 || cutoff > 31 || !Number.isInteger(due) || due < 1 || due > 31)) || (type === "prestamo" && !days.length)) { 
+    error.textContent = "Completa los datos de la fuente correctamente."; 
+    return; 
+  } 
+
+  if (editingSourceName) {
+    const index = cards.findIndex(({ nombre }) => nombre === editingSourceName); 
+    if (index >= 0) {
+      const nameCollision = cards.some((c, i) => i !== index && c.nombre.toLowerCase() === newName.toLowerCase());
+      if (nameCollision) {
+        error.textContent = "Ya existe otra fuente con ese nombre.";
+        return;
+      }
+
+      cards[index] = new FuenteFinanciamiento(newName, cutoff || 15, due || 15, type, days); 
+
+      if (newName !== editingSourceName) {
+        purchases = purchases.map((purchase) => 
+          purchase.tarjeta === editingSourceName 
+            ? new Compra({ ...purchase, tarjeta: newName }) 
+            : purchase
+        );
+      }
+    }
+  } else {
+    if (cards.some((source) => source.nombre.toLowerCase() === newName.toLowerCase())) { 
+      error.textContent = "Ya existe una fuente con ese nombre."; 
+      return; 
+    } 
+    cards.push(new FuenteFinanciamiento(newName, cutoff || 15, due || 15, type, days)); 
+  }
+
   saveToCloud(); 
   error.textContent = ""; 
   closeSourceModal(); 
   render(); 
 });
 
-// Formulario de Sueldo
+// Guardar Sueldo
 salaryForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const data = new FormData(salaryForm);
@@ -573,7 +655,14 @@ auth.onAuthStateChanged((user) => {
         
         if (isOwner && purchases.length === 0) {
           cards = [...INITIAL_CARDS];
-          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
+          const defaultFirstDate = getDefaultFirstPaymentDate(startOfToday());
+          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ 
+            nombre: compra, 
+            montoTotal: monto, 
+            tarjeta: "BBVA ORO", 
+            mesesSinIntereses: 1,
+            fechaPrimerPago: defaultFirstDate
+          }));
           saveToCloud();
         }
 
@@ -582,7 +671,14 @@ auth.onAuthStateChanged((user) => {
       } else {
         if (isOwner) {
           cards = [...INITIAL_CARDS];
-          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
+          const defaultFirstDate = getDefaultFirstPaymentDate(startOfToday());
+          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ 
+            nombre: compra, 
+            montoTotal: monto, 
+            tarjeta: "BBVA ORO", 
+            mesesSinIntereses: 1,
+            fechaPrimerPago: defaultFirstDate
+          }));
         } else {
           cards = [...INITIAL_CARDS];
           purchases = [];
@@ -605,3 +701,7 @@ auth.onAuthStateChanged((user) => {
     bottomNav.style.display = "none";
   }
 });
+
+// Inicializaciones
+renderPokemonEasterEgg(); 
+setInterval(renderPokemonEasterEgg, 30000);
