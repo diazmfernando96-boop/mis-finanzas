@@ -63,7 +63,7 @@ const INITIAL_CARDS = [
   new FuenteFinanciamiento("SEARS", 15, 5, "departamental")
 ];
 
-// Compras históricas personales (para tu cuenta)
+// Compras históricas personales
 const HISTORICAL_PURCHASES = [
   { compra: "LIVERPOOL PANTALLA", monto: 387 },
   { compra: "COLCHON SEARS", monto: 354 },
@@ -314,7 +314,7 @@ sourceForm.addEventListener("submit", (event) => {
   render(); 
 });
 
-// --- Lógica de Autenticación de Usuarios ---
+// --- Lógica de Autenticación de Usuarios y Recuperación de Contraseña ---
 const authScreen = document.querySelector("#auth-screen");
 const mainApp = document.querySelector("#main-app");
 const bottomNav = document.querySelector("#bottom-nav");
@@ -325,6 +325,7 @@ const toggleAuthMode = document.querySelector("#toggle-auth-mode");
 const authError = document.querySelector("#auth-error");
 const userDisplay = document.querySelector("#user-display");
 const logoutButton = document.querySelector("#logout-button");
+const forgotPasswordBtn = document.querySelector("#forgot-password-btn");
 
 let isRegisterMode = false;
 
@@ -350,18 +351,53 @@ function getAuthErrorMessage(err) {
   }
 }
 
+// Alternar entre modo Registro e Inicio de Sesión
 toggleAuthMode.addEventListener("click", () => {
   isRegisterMode = !isRegisterMode;
   authTitle.textContent = isRegisterMode ? "Crear cuenta" : "Iniciar sesión";
   authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
   toggleAuthMode.textContent = isRegisterMode ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate";
+  forgotPasswordBtn.style.display = isRegisterMode ? "none" : "block";
   authError.textContent = "";
 });
 
+// Enviar enlace de restablecimiento de contraseña
+forgotPasswordBtn.addEventListener("click", async () => {
+  const email = document.querySelector("#auth-email").value.trim();
+  authError.style.color = "#fca5a5";
+  
+  if (!email) {
+    authError.textContent = "Ingresa tu correo electrónico arriba para enviarte el enlace.";
+    document.querySelector("#auth-email").focus();
+    return;
+  }
+
+  try {
+    authError.style.color = "#a78bfa";
+    authError.textContent = "Enviando enlace de recuperación...";
+    await auth.sendPasswordResetEmail(email);
+    authError.style.color = "#55e6ab";
+    authError.textContent = "¡Enlace enviado! Revisa tu bandeja de entrada o spam para restablecer tu contraseña.";
+  } catch (err) {
+    authError.style.color = "#fca5a5";
+    if (err.code === "auth/user-not-found") {
+      authError.textContent = "No existe una cuenta registrada con este correo.";
+    } else if (err.code === "auth/invalid-email") {
+      authError.textContent = "Ingresa un correo electrónico válido.";
+    } else if (err.code === "auth/unauthorized-domain") {
+      authError.textContent = "Dominio no autorizado. Agrega diazmfernando96-boop.github.io en Firebase Console.";
+    } else {
+      authError.textContent = `Error: ${err.message}`;
+    }
+  }
+});
+
+// Enviar formulario de login / registro
 authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = document.querySelector("#auth-email").value.trim();
   const password = document.querySelector("#auth-password").value;
+  authError.style.color = "#fca5a5";
   authError.textContent = "";
   authSubmit.disabled = true;
   authSubmit.textContent = "Procesando...";
