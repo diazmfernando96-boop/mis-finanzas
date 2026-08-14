@@ -230,3 +230,24 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
   transform: scale(1.1);
 }
+/* ===================================================
+   CORRECCIÓN DE INPUTS Y SELECTS
+   =================================================== */
+
+/* Evita que los campos de formulario muestren la barra de desplazamiento global */
+input::-webkit-scrollbar,
+select::-webkit-scrollbar {
+  display: none;
+}
+
+/* Oculta las flechas nativas (spin buttons) en inputs numéricos para un diseño más limpio */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Soporte para ocultar las flechas en Firefox */
+input[type="number"] {
+  -moz-appearance: textfield; 
+}
