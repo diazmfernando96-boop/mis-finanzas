@@ -290,4 +290,318 @@ function render() {
   const cardOptions = cards.filter(({ tipo }) => tipo === "tarjeta").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const loanOptions = cards.filter(({ tipo }) => tipo === "prestamo").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const deptOptions = cards.filter(({ tipo }) => tipo === "departamental").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
-  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito
+  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito">${cardOptions}</optgroup>` : ""}${loanOptions ? `<optgroup label="Préstamos Personales">${loanOptions}</optgroup>` : ""}${deptOptions ? `<optgroup label="Departamentales">${deptOptions}</optgroup>` : ""}`;
+  
+  renderBreakdown(payments); 
+  renderManagePurchases(); 
+  renderManageCards(); 
+  renderTotalsAndAlert(payments, total); 
+  renderUpdatedBadge(); 
+  renderCharts(payments, total, today);
+  checkFortnightNotification(today);
+}
+
+// Modales y Formularios
+const purchaseModal = document.querySelector("#purchase-modal"), purchaseForm = document.querySelector("#purchase-form");
+const sourceModal = document.querySelector("#card-modal"), sourceForm = document.querySelector("#card-form");
+const salaryModal = document.querySelector("#salary-modal"), salaryForm = document.querySelector("#salary-form");
+
+function closePurchaseModal() { purchaseModal.classList.remove("is-open"); purchaseModal.setAttribute("aria-hidden", "true"); editingPurchaseId = null; }
+function openPurchaseModal(purchase = null) { 
+  editingPurchaseId = purchase?.id ?? null; purchaseForm.reset(); 
+  document.querySelector("#modal-title").textContent = purchase ? "Editar compra" : "Registrar compra"; 
+  document.querySelector("#save-purchase").textContent = purchase ? "Guardar cambios" : "Guardar compra"; 
+  if (purchase) { 
+    document.querySelector("#purchase-name").value = purchase.nombre; 
+    document.querySelector("#purchase-amount").value = purchase.montoTotal; 
+    document.querySelector("#purchase-card").value = purchase.tarjeta; 
+    document.querySelector("#purchase-months").value = purchase.mesesSinIntereses; 
+    document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
+    if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
+  } else {
+    document.querySelector("#fechaPrimerPago").value = getDefaultFirstPaymentDate(startOfToday());
+  }
+  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "false"); document.querySelector("#purchase-name").focus(); 
+}
+
+function closeSourceModal() { sourceModal.classList.remove("is-open"); sourceModal.setAttribute("aria-hidden", "true"); editingSourceName = null; }
+function toggleSourceFields() { const loan = document.querySelector("#source-type").value === "prestamo"; document.querySelector("#credit-fields").hidden = loan; document.querySelector("#loan-fields").hidden = !loan; document.querySelector("#card-cutoff").required = !loan; document.querySelector("#card-due").required = !loan; document.querySelector("#loan-payment-days").required = loan; }
+function openSourceModal(source = null) { 
+  editingSourceName = source?.nombre ?? null; 
+  sourceForm.reset(); 
+  document.querySelector("#card-modal-title").textContent = source ? "Editar fuente" : "Registrar fuente"; 
+  document.querySelector("#save-card").textContent = source ? "Guardar cambios" : "Guardar fuente"; 
+  document.querySelector("#card-name").disabled = Boolean(source); 
+  if (source) { 
+    document.querySelector("#card-name").value = source.nombre; 
+    document.querySelector("#source-type").value = source.tipo; 
+    document.querySelector("#card-cutoff").value = source.diaCorte; 
+    document.querySelector("#card-due").value = source.diaLimitePago; 
+    document.querySelector("#loan-payment-days").value = source.diasPago.join(", "); 
+  } 
+  toggleSourceFields(); 
+  sourceModal.classList.add("is-open"); 
+  sourceModal.setAttribute("aria-hidden", "false"); 
+  document.querySelector(source ? "#source-type" : "#card-name").focus(); 
+}
+
+function closeSalaryModal() { salaryModal.classList.remove("is-open"); salaryModal.setAttribute("aria-hidden", "true"); }
+function openSalaryModal() {
+  document.querySelector("#base-salary").value = salaryConfig.baseSalary || "";
+  document.querySelector("#current-income").value = salaryConfig.currentIncome || salaryConfig.baseSalary || "";
+  salaryModal.classList.add("is-open");
+  salaryModal.setAttribute("aria-hidden", "false");
+  document.querySelector("#current-income").focus();
+}
+
+// Botones y eventos de apertura/cierre
+document.querySelector("#open-purchase-modal").addEventListener("click", () => openPurchaseModal()); 
+document.querySelector("#manage-add-purchase").addEventListener("click", () => openPurchaseModal()); 
+document.querySelector("#close-purchase-modal").addEventListener("click", closePurchaseModal); 
+document.querySelector("#cancel-purchase").addEventListener("click", closePurchaseModal); 
+purchaseModal.addEventListener("click", (event) => { if (event.target === purchaseModal) closePurchaseModal(); });
+
+document.querySelector("#open-card-modal").addEventListener("click", () => openSourceModal()); 
+document.querySelector("#close-card-modal").addEventListener("click", closeSourceModal); 
+document.querySelector("#cancel-card").addEventListener("click", closeSourceModal); 
+sourceModal.addEventListener("click", (event) => { if (event.target === sourceModal) closeSourceModal(); }); 
+document.querySelector("#source-type").addEventListener("change", toggleSourceFields);
+
+document.querySelector("#open-salary-modal").addEventListener("click", openSalaryModal);
+document.querySelector("#close-salary-modal").addEventListener("click", closeSalaryModal);
+document.querySelector("#cancel-salary").addEventListener("click", closeSalaryModal);
+document.querySelector("#banner-action-btn").addEventListener("click", openSalaryModal);
+salaryModal.addEventListener("click", (event) => { if (event.target === salaryModal) closeSalaryModal(); });
+
+// Solicitar permisos de notificación push
+document.querySelector("#enable-notifications-btn").addEventListener("click", async () => {
+  if (!("Notification" in window)) {
+    alert("Este navegador no soporta notificaciones de escritorio.");
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm === "granted") {
+    alert("¡Notificaciones activadas! Te avisaremos en cada fecha de quincena.");
+  } else {
+    alert("Permiso de notificaciones no otorgado.");
+  }
+});
+
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closePurchaseModal(); closeSourceModal(); closeSalaryModal(); } }); 
+document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => { 
+  document.querySelectorAll(".tab").forEach((item) => { const active = item === tab; item.classList.toggle("is-active", active); item.setAttribute("aria-selected", active); }); 
+  document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== tab.dataset.view; }); 
+}));
+
+document.querySelector("#manage-table-body").addEventListener("click", (event) => { 
+  const button = event.target.closest("button[data-action]"); 
+  if (!button) return; 
+  const index = purchases.findIndex(({ id }) => id === button.dataset.id); 
+  if (index < 0) return; 
+  if (button.dataset.action === "edit") openPurchaseModal(purchases[index]); 
+  if (button.dataset.action === "delete" && window.confirm(`¿Eliminar “${purchases[index].nombre}”?`)) { 
+    purchases.splice(index, 1); 
+    saveToCloud(); 
+    render(); 
+  } 
+});
+
+purchaseForm.addEventListener("submit", (event) => { 
+  event.preventDefault(); 
+  const data = new FormData(purchaseForm), amount = Number(data.get("monto")), months = Number(data.get("meses")), paid = Number(data.get("mensualidadesPagadas")), fechaPrimerPago = data.get("fechaPrimerPago"), error = document.querySelector("#form-error"); 
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(months) || months < 1 || !Number.isInteger(paid) || paid < 0 || paid > months) { error.textContent = "Revisa el monto y las mensualidades pagadas."; return; } 
+  const changes = { nombre: data.get("nombre").trim(), montoTotal: amount, tarjeta: data.get("tarjeta"), mesesSinIntereses: months, mensualidadesPagadas: paid, fechaPrimerPago: fechaPrimerPago }; 
+  const index = purchases.findIndex(({ id }) => id === editingPurchaseId); 
+  if (index >= 0) purchases[index] = new Compra({ ...purchases[index], ...changes, saldoRestante: amount }); else purchases.push(new Compra(changes)); 
+  saveToCloud(); 
+  error.textContent = ""; 
+  closePurchaseModal(); 
+  render(); 
+});
+
+document.querySelector("#manage-cards-table-body").addEventListener("click", (event) => { 
+  const button = event.target.closest("button[data-source-action]"); 
+  if (!button || button.disabled) return; 
+  const index = cards.findIndex(({ nombre }) => nombre === button.dataset.sourceName); 
+  if (index < 0) return; 
+  if (button.dataset.sourceAction === "edit") openSourceModal(cards[index]); 
+  if (button.dataset.sourceAction === "delete") { 
+    const replacement = cards.find((_, current) => current !== index); 
+    if (!replacement && purchases.some(({ tarjeta }) => tarjeta === cards[index].nombre)) return; 
+    if (replacement) { 
+      purchases = purchases.map((purchase) => purchase.tarjeta === cards[index].nombre ? new Compra({ ...purchase, tarjeta: replacement.nombre }) : purchase); 
+    } 
+    cards.splice(index, 1); 
+    saveToCloud(); 
+    render(); 
+  } 
+});
+
+sourceForm.addEventListener("submit", (event) => { 
+  event.preventDefault(); 
+  const data = new FormData(sourceForm), name = editingSourceName ?? data.get("nombre").trim(), type = data.get("tipo"), cutoff = Number(data.get("corte")), due = Number(data.get("limite")), days = normalizePaymentDays(data.get("diasPago")), error = document.querySelector("#card-form-error"); 
+  if (!name || ((type === "tarjeta" || type === "departamental") && (!Number.isInteger(cutoff) || cutoff < 1 || cutoff > 31 || !Number.isInteger(due) || due < 1 || due > 31)) || (type === "prestamo" && !days.length)) { error.textContent = "Completa los datos de la fuente correctamente."; return; } 
+  const index = cards.findIndex(({ nombre }) => nombre === editingSourceName); 
+  if (index >= 0) cards[index] = new FuenteFinanciamiento(editingSourceName, cutoff || 15, due || 15, type, days); else if (cards.some((source) => source.nombre.toLocaleLowerCase() === name.toLocaleLowerCase())) { error.textContent = "Ya existe una fuente con ese nombre."; return; } else cards.push(new FuenteFinanciamiento(name, cutoff || 15, due || 15, type, days)); 
+  saveToCloud(); 
+  error.textContent = ""; 
+  closeSourceModal(); 
+  render(); 
+});
+
+// Formulario de Sueldo
+salaryForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const data = new FormData(salaryForm);
+  salaryConfig = {
+    baseSalary: Number(data.get("baseSalary")) || 0,
+    currentIncome: Number(data.get("currentIncome")) || 0,
+    lastUpdated: new Date().toISOString()
+  };
+  saveToCloud();
+  closeSalaryModal();
+  render();
+});
+
+// --- Lógica de Autenticación de Usuarios ---
+const authScreen = document.querySelector("#auth-screen");
+const mainApp = document.querySelector("#main-app");
+const bottomNav = document.querySelector("#bottom-nav");
+const authForm = document.querySelector("#auth-form");
+const authTitle = document.querySelector("#auth-title");
+const authSubmit = document.querySelector("#auth-submit");
+const toggleAuthMode = document.querySelector("#toggle-auth-mode");
+const authError = document.querySelector("#auth-error");
+const userDisplay = document.querySelector("#user-display");
+const logoutButton = document.querySelector("#logout-button");
+const forgotPasswordBtn = document.querySelector("#forgot-password-btn");
+
+let isRegisterMode = false;
+
+function getAuthErrorMessage(err) {
+  const code = err.code || "";
+  switch (code) {
+    case "auth/invalid-email": return "El formato de correo no es válido.";
+    case "auth/user-not-found": case "auth/wrong-password": case "auth/invalid-credential": return "Correo o contraseña incorrectos.";
+    case "auth/email-already-in-use": return "Ya existe una cuenta con este correo. Cambia a Iniciar sesión.";
+    case "auth/weak-password": return "La contraseña debe tener mínimo 6 caracteres.";
+    default: return `Error (${code}): ${err.message || "Verifica tus datos."}`;
+  }
+}
+
+toggleAuthMode.addEventListener("click", () => {
+  isRegisterMode = !isRegisterMode;
+  authTitle.textContent = isRegisterMode ? "Crear cuenta" : "Iniciar sesión";
+  authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
+  toggleAuthMode.textContent = isRegisterMode ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate";
+  if (forgotPasswordBtn) forgotPasswordBtn.style.display = isRegisterMode ? "none" : "block";
+  authError.textContent = "";
+});
+
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener("click", async () => {
+    const email = document.querySelector("#auth-email").value.trim();
+    authError.style.color = "#fca5a5";
+    if (!email) {
+      authError.textContent = "Ingresa tu correo electrónico arriba para enviarte el enlace.";
+      document.querySelector("#auth-email").focus();
+      return;
+    }
+    try {
+      authError.style.color = "#a78bfa";
+      authError.textContent = "Enviando enlace de recuperación...";
+      await auth.sendPasswordResetEmail(email);
+      authError.style.color = "#55e6ab";
+      authError.textContent = "¡Enlace enviado! Revisa tu correo.";
+    } catch (err) {
+      authError.style.color = "#fca5a5";
+      authError.textContent = `Error: ${err.message}`;
+    }
+  });
+}
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.querySelector("#auth-email").value.trim();
+  const password = document.querySelector("#auth-password").value;
+  authError.style.color = "#fca5a5";
+  authError.textContent = "";
+  authSubmit.disabled = true;
+  authSubmit.textContent = "Procesando...";
+
+  try {
+    if (isRegisterMode) {
+      await auth.createUserWithEmailAndPassword(email, password);
+    } else {
+      await auth.signInWithEmailAndPassword(email, password);
+    }
+  } catch (err) {
+    authError.textContent = getAuthErrorMessage(err);
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
+  }
+});
+
+logoutButton.addEventListener("click", () => {
+  auth.signOut();
+});
+
+// Escuchar cambios de sesión de usuario en Firebase
+auth.onAuthStateChanged((user) => {
+  if (unsubscribeFirestore) {
+    unsubscribeFirestore();
+    unsubscribeFirestore = null;
+  }
+
+  if (user) {
+    currentUser = user;
+    userDocRef = db.collection("users").doc(user.uid);
+    authScreen.style.display = "none";
+    mainApp.style.display = "block";
+    bottomNav.style.display = "flex";
+    userDisplay.textContent = user.email || "Mi cuenta";
+
+    const isOwner = user.email && user.email.toLowerCase() === "diazmfernando96@gmail.com";
+
+    unsubscribeFirestore = userDocRef.onSnapshot((snapshot) => {
+      if (snapshot.exists) {
+        const data = snapshot.data();
+        cards = Array.isArray(data.cards) ? data.cards.map((c) => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago)) : [];
+        purchases = Array.isArray(data.purchases) ? data.purchases.map((d) => new Compra(d)) : [];
+        salaryConfig = data.salaryConfig || { baseSalary: 0, currentIncome: 0, lastUpdated: "" };
+        
+        if (isOwner && purchases.length === 0) {
+          cards = [...INITIAL_CARDS];
+          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
+          saveToCloud();
+        }
+
+        if (data.updatedAt) localStorage.setItem(STORAGE_KEYS.updatedAt, data.updatedAt);
+        render();
+      } else {
+        if (isOwner) {
+          cards = [...INITIAL_CARDS];
+          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
+        } else {
+          cards = [...INITIAL_CARDS];
+          purchases = [];
+        }
+        salaryConfig = { baseSalary: 0, currentIncome: 0, lastUpdated: "" };
+        saveToCloud();
+        render();
+      }
+    }, (error) => {
+      console.error("Error en Firestore:", error);
+    });
+
+  } else {
+    currentUser = null;
+    userDocRef = null;
+    cards = [];
+    purchases = [];
+    authScreen.style.display = "grid";
+    mainApp.style.display = "none";
+    bottomNav.style.display = "none";
+  }
+});
