@@ -11,11 +11,7 @@ const firebaseConfig = {
 // 2. Inicializar Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const auth = firebase.auth();
-
-let currentUser = null;
-let userDocRef = null;
-let unsubscribeFirestore = null;
+const docRef = db.collection("finanzas").doc("mi_dashboard");
 
 const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
@@ -44,10 +40,7 @@ function normalizePaymentDays(days) {
 const readStorage = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return Array.isArray(value) ? value : fallback; } catch { return fallback; } };
 const writeStorage = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
-let cards = [];
-let purchases = [];
-
-// Plantilla de fuentes predeterminadas para nuevos usuarios
+// Fuentes por defecto disponibles en el sistema
 const DEFAULT_CARDS = [
   new FuenteFinanciamiento("BBVA ORO", 15, 5, "tarjeta"),
   new FuenteFinanciamiento("BBVA AZUL", 15, 5, "tarjeta"),
@@ -66,16 +59,18 @@ const DEFAULT_CARDS = [
   new FuenteFinanciamiento("SEARS", 15, 5, "departamental")
 ];
 
-// Guardar datos en el documento del usuario en Firestore
+let cards = readStorage(STORAGE_KEYS.cards, DEFAULT_CARDS).map(c => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago));
+let purchases = readStorage(STORAGE_KEYS.purchases, []).map((data) => new Compra(data));
+
+// Guardar en LocalStorage y Firestore en la nube
 async function saveToCloud() {
-  if (!userDocRef) return;
   const timestamp = new Date().toISOString();
   localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
   localStorage.setItem(STORAGE_KEYS.purchases, JSON.stringify(purchases));
   localStorage.setItem(STORAGE_KEYS.updatedAt, timestamp);
 
   try {
-    await userDocRef.set({
+    await docRef.set({
       cards: cards.map(c => ({ ...c })),
       purchases: purchases.map(p => ({ ...p })),
       updatedAt: timestamp
@@ -199,7 +194,4 @@ function openPurchaseModal(purchase = null) {
     document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
     if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
   } 
-  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "false"); document.querySelector("#purchase-name").focus(); 
-}
-
-function closeSourceModal() { sourceModal.cl
+  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "
