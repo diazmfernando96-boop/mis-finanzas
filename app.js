@@ -106,8 +106,32 @@ const createDate = (year, month, day) => new Date(year, month, Math.min(day, new
 const localDateValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const parseLocalDate = (value) => { const [year, month, day] = String(value).split("-").map(Number); return createDate(year, month - 1, day); };
 const startOfToday = () => { const date = new Date(); date.setHours(0, 0, 0, 0); return date; };
-const standardPaymentDay = (day) => Math.abs(day - 1) < Math.abs(day - 15) ? 1 : 15;
-const cashFlowDate = (date) => date.getDate() <= 15 ? createDate(date.getFullYear(), date.getMonth(), 15) : createDate(date.getFullYear(), date.getMonth() + 1, 0);
+
+// Regla del 1 y 15: Del 1 al 14 -> Se paga el 1; Del 15 al 31 -> Se paga el 15
+function calculateDefaultPaymentDay(dayNumber) {
+  return (dayNumber >= 1 && dayNumber <= 14) ? 1 : 15;
+}
+
+// Calcular la fecha predeterminada del primer pago para una compra nueva
+function getDefaultFirstPaymentDate(baseDate = new Date()) {
+  const day = baseDate.getDate();
+  const paymentDay = calculateDefaultPaymentDay(day);
+  let year = baseDate.getFullYear();
+  let month = baseDate.getMonth();
+  
+  // Se programa para el siguiente corte/mes
+  month += 1;
+  return localDateValue(createDate(year, month, paymentDay));
+}
+
+// Agrupación de flujo de caja según la regla del 1 y 15
+const cashFlowDate = (date) => {
+  const day = date.getDate();
+  return (day >= 1 && day <= 14) 
+    ? createDate(date.getFullYear(), date.getMonth(), 1) 
+    : createDate(date.getFullYear(), date.getMonth(), 15);
+};
+
 const sourceFor = (purchase) => cards.find(({ nombre }) => nombre === purchase.tarjeta);
 
 function nextPaymentDate(days, from) {
@@ -116,18 +140,47 @@ function nextPaymentDate(days, from) {
   return new Date(base);
 }
 
-function paymentDates(source, count, today) {
+function paymentDates(source, count, baseDate) {
   if (!count) return [];
-  if (source.tipo === "prestamo") { const days = source.diasPago.length ? source.diasPago : [15, 30]; const dates = []; let cursor = today; for (let index = 0; index < count; index += 1) { const date = nextPaymentDate(days, cursor); dates.push(date); cursor = new Date(date); cursor.setDate(cursor.getDate() + 1); } return dates; }
-  const day = standardPaymentDay(source.diaCorte); const first = createDate(today.getFullYear(), today.getMonth(), day); if (first < today) first.setMonth(first.getMonth() + 1); return Array.from({ length: count }, (_, index) => createDate(first.getFullYear(), first.getMonth() + index, day));
+  if (source.tipo === "prestamo") { 
+    const days = source.diasPago.length ? source.diasPago : [15, 30]; 
+    const dates = []; 
+    let cursor = baseDate; 
+    for (let index = 0; index < count; index += 1) { 
+      const date = nextPaymentDate(days, cursor); 
+      dates.push(date); 
+      cursor = new Date(date); 
+      cursor.setDate(cursor.getDate() + 1); 
+    } 
+    return dates; 
+  }
+  
+  // Regla: Si la compra ocurrió del 1 al 14 paga el 1, del 15 al 31 paga el 15
+  const day = calculateDefaultPaymentDay(baseDate.getDate());
+  const first = createDate(baseDate.getFullYear(), baseDate.getMonth() + 1, day);
+  return Array.from({ length: count }, (_, index) => createDate(first.getFullYear(), first.getMonth() + index, day));
 }
 
 function projectPayments(purchase) {
   const source = sourceFor(purchase); if (!source) return [];
   const totalCents = Math.round(purchase.montoTotal * 100), baseCents = Math.floor(totalCents / purchase.mesesSinIntereses), paid = purchase.mensualidadesPagadas;
   const remainingNumbers = Array.from({ length: Math.max(0, purchase.mesesSinIntereses - paid) }, (_, index) => paid + index + 1);
-  const dates = purchase.fechaPrimerPago ? remainingNumbers.map((_, index) => { const first = parseLocalDate(purchase.fechaPrimerPago); return createDate(first.getFullYear(), first.getMonth() + paid + index, first.getDate()); }) : paymentDates(source, remainingNumbers.length, startOfToday());
-  return remainingNumbers.map((number, index) => ({ number, amount: (baseCents + (number === purchase.mesesSinIntereses ? totalCents - baseCents * purchase.mesesSinIntereses : 0)) / 100, date: dates[index], card: source.nombre }));
+  
+  let dates = [];
+  if (purchase.fechaPrimerPago) {
+    const first = parseLocalDate(purchase.fechaPrimerPago);
+    dates = remainingNumbers.map((_, index) => createDate(first.getFullYear(), first.getMonth() + paid + index, first.getDate()));
+  } else {
+    const purchaseDate = purchase.fechaCompra ? new Date(purchase.fechaCompra) : startOfToday();
+    dates = paymentDates(source, remainingNumbers.length, purchaseDate);
+  }
+  
+  return remainingNumbers.map((number, index) => ({ 
+    number, 
+    amount: (baseCents + (number === purchase.mesesSinIntereses ? totalCents - baseCents * purchase.mesesSinIntereses : 0)) / 100, 
+    date: dates[index] || startOfToday(), 
+    card: source.nombre 
+  }));
 }
 
 const remainingBalance = (purchase) => projectPayments(purchase).reduce((sum, payment) => sum + payment.amount, 0);
@@ -215,7 +268,10 @@ function openPurchaseModal(purchase = null) {
     document.querySelector("#purchase-months").value = purchase.mesesSinIntereses; 
     document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
     if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
-  } 
+  } else {
+    // Autocompletar la fecha de primer pago según la regla del 1 y 15
+    document.querySelector("#fechaPrimerPago").value = getDefaultFirstPaymentDate(startOfToday());
+  }
   purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "false"); document.querySelector("#purchase-name").focus(); 
 }
 
@@ -357,40 +413,40 @@ toggleAuthMode.addEventListener("click", () => {
   authTitle.textContent = isRegisterMode ? "Crear cuenta" : "Iniciar sesión";
   authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
   toggleAuthMode.textContent = isRegisterMode ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate";
-  forgotPasswordBtn.style.display = isRegisterMode ? "none" : "block";
+  if (forgotPasswordBtn) forgotPasswordBtn.style.display = isRegisterMode ? "none" : "block";
   authError.textContent = "";
 });
 
 // Enviar enlace de restablecimiento de contraseña
-forgotPasswordBtn.addEventListener("click", async () => {
-  const email = document.querySelector("#auth-email").value.trim();
-  authError.style.color = "#fca5a5";
-  
-  if (!email) {
-    authError.textContent = "Ingresa tu correo electrónico arriba para enviarte el enlace.";
-    document.querySelector("#auth-email").focus();
-    return;
-  }
-
-  try {
-    authError.style.color = "#a78bfa";
-    authError.textContent = "Enviando enlace de recuperación...";
-    await auth.sendPasswordResetEmail(email);
-    authError.style.color = "#55e6ab";
-    authError.textContent = "¡Enlace enviado! Revisa tu bandeja de entrada o spam para restablecer tu contraseña.";
-  } catch (err) {
+if (forgotPasswordBtn) {
+  forgotPasswordBtn.addEventListener("click", async () => {
+    const email = document.querySelector("#auth-email").value.trim();
     authError.style.color = "#fca5a5";
-    if (err.code === "auth/user-not-found") {
-      authError.textContent = "No existe una cuenta registrada con este correo.";
-    } else if (err.code === "auth/invalid-email") {
-      authError.textContent = "Ingresa un correo electrónico válido.";
-    } else if (err.code === "auth/unauthorized-domain") {
-      authError.textContent = "Dominio no autorizado. Agrega diazmfernando96-boop.github.io en Firebase Console.";
-    } else {
-      authError.textContent = `Error: ${err.message}`;
+    
+    if (!email) {
+      authError.textContent = "Ingresa tu correo electrónico arriba para enviarte el enlace.";
+      document.querySelector("#auth-email").focus();
+      return;
     }
-  }
-});
+
+    try {
+      authError.style.color = "#a78bfa";
+      authError.textContent = "Enviando enlace de recuperación...";
+      await auth.sendPasswordResetEmail(email);
+      authError.style.color = "#55e6ab";
+      authError.textContent = "¡Enlace enviado! Revisa tu bandeja de entrada o spam para restablecer tu contraseña.";
+    } catch (err) {
+      authError.style.color = "#fca5a5";
+      if (err.code === "auth/user-not-found") {
+        authError.textContent = "No existe una cuenta registrada con este correo.";
+      } else if (err.code === "auth/invalid-email") {
+        authError.textContent = "Ingresa un correo electrónico válido.";
+      } else {
+        authError.textContent = `Error: ${err.message}`;
+      }
+    }
+  });
+}
 
 // Enviar formulario de login / registro
 authForm.addEventListener("submit", async (e) => {
@@ -445,7 +501,7 @@ auth.onAuthStateChanged((user) => {
         cards = Array.isArray(data.cards) ? data.cards.map((c) => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago)) : [];
         purchases = Array.isArray(data.purchases) ? data.purchases.map((d) => new Compra(d)) : [];
         
-        // Si es TU cuenta y no tiene compras, precarga tus datos personales
+        // Si es TU cuenta y no tiene compras registradas, precarga tu catálogo histórico
         if (isOwner && purchases.length === 0) {
           cards = [...INITIAL_CARDS];
           purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
@@ -460,7 +516,7 @@ auth.onAuthStateChanged((user) => {
           cards = [...INITIAL_CARDS];
           purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
         } else {
-          // Cualquier otro usuario nuevo inicia en ceros (compras vacías)
+          // Cualquier otro usuario nuevo inicia en ceros
           cards = [...INITIAL_CARDS];
           purchases = [];
         }
