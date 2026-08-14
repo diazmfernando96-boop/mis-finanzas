@@ -43,35 +43,9 @@ class FuenteFinanciamiento {
 }
 
 class Compra {
-  constructor({ 
-    id = crypto.randomUUID(), 
-    nombre, 
-    montoTotal, 
-    saldoRestante = montoTotal, 
-    tarjeta, 
-    frecuenciaPago = "mensual",
-    mesesSinIntereses = 1, 
-    mensualidadesPagadas = 0, 
-    fechaPrimerPago = null, 
-    fechaCompra = new Date().toISOString() 
-  }) {
-    if (!tarjeta || !Number.isFinite(montoTotal) || !Number.isInteger(Number(mesesSinIntereses)) || Number(mesesSinIntereses) < 1) {
-      throw new Error("Datos de compra inválidos.");
-    }
-    const plazos = Number(mesesSinIntereses);
-    const pagados = Math.max(0, Math.min(plazos, Number(mensualidadesPagadas) || 0));
-    Object.assign(this, { 
-      id, 
-      nombre, 
-      montoTotal, 
-      saldoRestante, 
-      tarjeta, 
-      frecuenciaPago: frecuenciaPago === "quincenal" ? "quincenal" : "mensual",
-      mesesSinIntereses: plazos, 
-      mensualidadesPagadas: pagados, 
-      fechaPrimerPago, 
-      fechaCompra 
-    });
+  constructor({ id = crypto.randomUUID(), nombre, montoTotal, saldoRestante = montoTotal, tarjeta, mesesSinIntereses = 1, mensualidadesPagadas = 0, fechaPrimerPago = null, fechaCompra = new Date().toISOString() }) {
+    if (!tarjeta || !Number.isFinite(montoTotal) || !Number.isInteger(mesesSinIntereses) || mesesSinIntereses < 1) throw new Error("Datos de compra inválidos.");
+    Object.assign(this, { id, nombre, montoTotal, saldoRestante, tarjeta, mesesSinIntereses, mensualidadesPagadas: Math.max(0, Math.min(mesesSinIntereses, Number(mensualidadesPagadas) || 0)), fechaPrimerPago, fechaCompra });
   }
 }
 
@@ -148,10 +122,12 @@ const localDateValue = (date) => `${date.getFullYear()}-${String(date.getMonth()
 const parseLocalDate = (value) => { const [year, month, day] = String(value).split("-").map(Number); return createDate(year, month - 1, day); };
 const startOfToday = () => { const date = new Date(); date.setHours(0, 0, 0, 0); return date; };
 
+// Regla: Compras del 1 al 14 pagan el 1; Compras del 15 al 31 pagan el 15
 function calculateDefaultPaymentDay(dayNumber) {
   return (dayNumber >= 1 && dayNumber <= 14) ? 1 : 15;
 }
 
+// Fecha predeterminada de primer pago al registrar compra
 function getDefaultFirstPaymentDate(baseDate = new Date()) {
   const day = baseDate.getDate();
   const paymentDay = calculateDefaultPaymentDay(day);
@@ -161,6 +137,7 @@ function getDefaultFirstPaymentDate(baseDate = new Date()) {
   return localDateValue(createDate(year, month, paymentDay));
 }
 
+// Agrupación de flujo de caja según la regla del 1 y 15
 const cashFlowDate = (date) => {
   const day = date.getDate();
   return (day >= 1 && day <= 14) 
@@ -176,58 +153,44 @@ function nextPaymentDate(days, from) {
   return new Date(base);
 }
 
-// Proyección de Pagos adaptada a Frecuencia Quincenal o Mensual
-function projectPayments(purchase) {
-  const source = sourceFor(purchase); 
-  if (!source) return [];
-  const totalCents = Math.round(purchase.montoTotal * 100);
-  const plazos = purchase.mesesSinIntereses || 1;
-  const baseCents = Math.floor(totalCents / plazos);
-  const paid = purchase.mensualidadesPagadas || 0;
-  const remainingCount = Math.max(0, plazos - paid);
-  const remainingNumbers = Array.from({ length: remainingCount }, (_, index) => paid + index + 1);
+function paymentDates(source, count, baseDate) {
+  if (!count) return [];
+  if (source.tipo === "prestamo") { 
+    const days = source.diasPago.length ? source.diasPago : [15, 30]; 
+    const dates = []; 
+    let cursor = baseDate; 
+    for (let index = 0; index < count; index += 1) { 
+      const date = nextPaymentDate(days, cursor); 
+      dates.push(date); 
+      cursor = new Date(date); 
+      cursor.setDate(cursor.getDate() + 1); 
+    } 
+    return dates; 
+  }
   
-  if (remainingCount === 0) return [];
+  const day = calculateDefaultPaymentDay(baseDate.getDate());
+  const first = createDate(baseDate.getFullYear(), baseDate.getMonth() + 1, day);
+  return Array.from({ length: count }, (_, index) => createDate(first.getFullYear(), first.getMonth() + index, day));
+}
 
-  let firstDate;
+function projectPayments(purchase) {
+  const source = sourceFor(purchase); if (!source) return [];
+  const totalCents = Math.round(purchase.montoTotal * 100), baseCents = Math.floor(totalCents / purchase.mesesSinIntereses), paid = purchase.mensualidadesPagadas;
+  const remainingNumbers = Array.from({ length: Math.max(0, purchase.mesesSinIntereses - paid) }, (_, index) => paid + index + 1);
+  
+  let dates = [];
   if (purchase.fechaPrimerPago) {
-    firstDate = parseLocalDate(purchase.fechaPrimerPago);
+    const first = parseLocalDate(purchase.fechaPrimerPago);
+    dates = remainingNumbers.map((_, index) => createDate(first.getFullYear(), first.getMonth() + paid + index, first.getDate()));
   } else {
     const purchaseDate = purchase.fechaCompra ? new Date(purchase.fechaCompra) : startOfToday();
-    const payDay = calculateDefaultPaymentDay(purchaseDate.getDate());
-    firstDate = createDate(purchaseDate.getFullYear(), purchaseDate.getMonth() + 1, payDay);
+    dates = paymentDates(source, remainingNumbers.length, purchaseDate);
   }
-
-  // Generar la secuencia completa de fechas
-  let allDates = [];
-  if (purchase.frecuenciaPago === "quincenal") {
-    let current = new Date(firstDate);
-    for (let i = 0; i < plazos; i++) {
-      allDates.push(new Date(current));
-      const day = current.getDate();
-      const year = current.getFullYear();
-      const month = current.getMonth();
-      if (day <= 14) {
-        current = createDate(year, month, 15);
-      } else {
-        current = createDate(year, month + 1, 1);
-      }
-    }
-  } else {
-    // Mensual
-    for (let i = 0; i < plazos; i++) {
-      allDates.push(createDate(firstDate.getFullYear(), firstDate.getMonth() + i, firstDate.getDate()));
-    }
-  }
-
-  const remainingDates = allDates.slice(paid);
-
+  
   return remainingNumbers.map((number, index) => ({ 
     number, 
-    totalPlazos: plazos,
-    frecuencia: purchase.frecuenciaPago || "mensual",
-    amount: (baseCents + (number === plazos ? totalCents - baseCents * plazos : 0)) / 100, 
-    date: remainingDates[index] || startOfToday(), 
+    amount: (baseCents + (number === purchase.mesesSinIntereses ? totalCents - baseCents * purchase.mesesSinIntereses : 0)) / 100, 
+    date: dates[index] || startOfToday(), 
     card: source.nombre 
   }));
 }
@@ -306,49 +269,16 @@ function renderCharts(payments, total, today) {
   if (flowChart) flowChart.destroy(); flowChart = new Chart(canvas, { type: "line", data: { labels: months.map((month) => monthFormatter.format(month).toUpperCase()), datasets: [{ data: amounts, borderColor: "#a78bfa", borderWidth: 3, backgroundColor: gradient, fill: true, tension: .4, pointBackgroundColor: "#10b981", pointBorderColor: "#09090e", pointBorderWidth: 3, pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, border: { display: false }, ticks: { color: "#858ba2" } }, y: { display: false, beginAtZero: true } }, plugins: { legend: { display: false } } } });
 }
 
-function renderBreakdown(payments) { 
-  const body = document.querySelector("#breakdown-table-body"); 
-  const future = payments.sort((a, b) => a.date - b.date); 
-  body.innerHTML = future.length ? future.map((payment) => {
-    const isQ = payment.frecuencia === "quincenal";
-    const label = isQ ? "QNA" : "MSI";
-    return `<tr>
-      <td>${formatDate(payment.date)}</td>
-      <td>${escapeHtml(payment.purchase.nombre)}</td>
-      <td>${escapeHtml(payment.card)}</td>
-      <td>${payment.number}/${payment.totalPlazos} ${label}</td>
-      <td>${money.format(payment.amount)}</td>
-    </tr>`;
-  }).join("") : '<tr><td colspan="5" class="muted">No hay pagos futuros por proyectar.</td></tr>'; 
-}
-
+function renderBreakdown(payments) { const body = document.querySelector("#breakdown-table-body"); const future = payments.sort((a, b) => a.date - b.date); body.innerHTML = future.length ? future.map((payment) => `<tr><td>${formatDate(payment.date)}</td><td>${escapeHtml(payment.purchase.nombre)}</td><td>${escapeHtml(payment.card)}</td><td>${payment.number}/${payment.purchase.mesesSinIntereses}</td><td>${money.format(payment.amount)}</td></tr>`).join("") : '<tr><td colspan="5" class="muted">No hay pagos futuros por proyectar.</td></tr>'; }
 function sourceSchedule(source) { return source.tipo === "prestamo" ? `Días ${source.diasPago.join(", ") || "15, 30"}` : `Corte ${source.diaCorte} · Pago ${source.diaLimitePago}`; }
-
-function renderManagePurchases() { 
-  const body = document.querySelector("#manage-table-body"); 
-  body.innerHTML = purchases.length ? purchases.map((purchase) => {
-    const isQ = purchase.frecuenciaPago === "quincenal";
-    const label = isQ ? "QNA" : "MSI";
-    return `<tr>
-      <td>${escapeHtml(purchase.nombre)}</td>
-      <td>${money.format(purchase.montoTotal)}</td>
-      <td>${escapeHtml(purchase.tarjeta)}</td>
-      <td>${purchase.mensualidadesPagadas}/${purchase.mesesSinIntereses} ${label}</td>
-      <td class="action-cell">
-        <button class="action-button" data-action="edit" data-id="${purchase.id}" type="button">Editar</button>
-        <button class="action-button danger-button" data-action="delete" data-id="${purchase.id}" type="button">Eliminar</button>
-      </td>
-    </tr>`;
-  }).join("") : '<tr><td colspan="5" class="muted">Aún no hay compras registradas.</td></tr>'; 
-}
-
+function renderManagePurchases() { const body = document.querySelector("#manage-table-body"); body.innerHTML = purchases.length ? purchases.map((purchase) => `<tr><td>${escapeHtml(purchase.nombre)}</td><td>${money.format(purchase.montoTotal)}</td><td>${escapeHtml(purchase.tarjeta)}</td><td>${purchase.mensualidadesPagadas}/${purchase.mesesSinIntereses}</td><td class="action-cell"><button class="action-button" data-action="edit" data-id="${purchase.id}" type="button">Editar</button><button class="action-button danger-button" data-action="delete" data-id="${purchase.id}" type="button">Eliminar</button></td></tr>`).join("") : '<tr><td colspan="5" class="muted">Aún no hay compras registradas.</td></tr>'; }
 function renderManageCards() { const body = document.querySelector("#manage-cards-table-body"); body.innerHTML = cards.map((source) => { const inUse = purchases.some(({ tarjeta }) => tarjeta === source.nombre), cannotDelete = cards.length === 1 && inUse; const tipoLabel = source.tipo === "prestamo" ? "Préstamo personal" : (source.tipo === "departamental" ? "Departamental" : "Tarjeta de crédito"); return `<tr><td>${escapeHtml(source.nombre)}</td><td>${tipoLabel}</td><td>${sourceSchedule(source)}</td><td class="action-cell"><button class="action-button" data-source-action="edit" data-source-name="${escapeHtml(source.nombre)}" type="button">Editar</button><button class="action-button danger-button" data-source-action="delete" data-source-name="${escapeHtml(source.nombre)}" type="button" ${cannotDelete ? "disabled" : ""}>Eliminar</button></td></tr>`; }).join(""); }
 function renderTotalsAndAlert(payments, total) { document.querySelector("#global-debt").textContent = money.format(total); document.querySelector("#global-debt-detail").textContent = `${purchases.length} compra${purchases.length === 1 ? "" : "s"} activa${purchases.length === 1 ? "" : "s"}`; const next = [...payments].sort((a, b) => a.date - b.date)[0]; document.querySelector("#urgent-date").textContent = next ? `Pago: ${formatDate(next.date)}` : "Sin pagos próximos"; document.querySelector("#urgent-card").textContent = next ? next.card : "—"; document.querySelector("#urgent-amount").textContent = money.format(next?.amount || 0); }
 
 function render() {
   const today = startOfToday(), payments = allPayments(), total = purchases.reduce((sum, purchase) => sum + remainingBalance(purchase), 0), next = [...payments].sort((a, b) => a.date - b.date)[0];
   
-  // 1. Cobro de la quincena del 15 en Dashboard
+  // 1. Cobro exclusivo de la quincena del 15 para la pantalla principal (Dashboard)
   const payments15 = payments.filter(p => isPaymentInFortnight15(p.date, today));
   const totalFortnight15 = payments15.reduce((sum, p) => sum + p.amount, 0);
 
@@ -391,18 +321,12 @@ function render() {
 
   // 3. Tablas de Fuentes y Compras en Dashboard
   document.querySelector("#cards-table-body").innerHTML = cards.map((source) => { const tipoLabel = source.tipo === "prestamo" ? "Préstamo" : (source.tipo === "departamental" ? "Departamental" : "Tarjeta"); return `<tr><td>${escapeHtml(source.nombre)}</td><td>${tipoLabel}</td><td>${sourceSchedule(source)}</td><td>${money.format(purchases.filter(({ tarjeta }) => tarjeta === source.nombre).reduce((sum, purchase) => sum + remainingBalance(purchase), 0))}</td></tr>`}).join("");
-  
-  document.querySelector("#purchases-table-body").innerHTML = purchases.length ? purchases.map((purchase) => { 
-    const installments = projectPayments(purchase), first = installments[0]; 
-    const isQ = purchase.frecuenciaPago === "quincenal";
-    const label = isQ ? "QNA" : "MSI";
-    return `<tr><td>${escapeHtml(purchase.nombre)}</td><td>${escapeHtml(purchase.tarjeta)}</td><td>${first ? money.format(first.amount) : money.format(0)} / ${purchase.mesesSinIntereses} ${label}</td><td>${first ? formatDate(first.date) : "Finalizado"}</td></tr>`; 
-  }).join("") : '<tr><td colspan="4" class="muted">Aún no hay compras registradas.</td></tr>'; 
+  document.querySelector("#purchases-table-body").innerHTML = purchases.length ? purchases.map((purchase) => { const installments = projectPayments(purchase), first = installments[0]; return `<tr><td>${escapeHtml(purchase.nombre)}</td><td>${escapeHtml(purchase.tarjeta)}</td><td>${first ? money.format(first.amount) : money.format(0)} / ${purchase.mesesSinIntereses} MSI</td><td>${first ? formatDate(first.date) : "Finalizado"}</td></tr>`; }).join("") : '<tr><td colspan="4" class="muted">Aún no hay compras registradas.</td></tr>';
   
   const cardOptions = cards.filter(({ tipo }) => tipo === "tarjeta").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const loanOptions = cards.filter(({ tipo }) => tipo === "prestamo").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const deptOptions = cards.filter(({ tipo }) => tipo === "departamental").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
-  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito">${cardOptions}</optgroup>` : ""}${loanOptions ? `<optgroup label="Préstamos Personales">${loanOptions}</optgroup>` : ""}${deptOptions ? `<optgroup label="Departamentales">${deptOptions}</optgroup>` : ""}`; 
+  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito">${cardOptions}</optgroup>` : ""}${loanOptions ? `<optgroup label="Préstamos Personales">${loanOptions}</optgroup>` : ""}${deptOptions ? `<optgroup label="Departamentales">${deptOptions}</optgroup>` : ""}`;
   
   renderBreakdown(payments); 
   renderManagePurchases(); 
@@ -417,76 +341,22 @@ const purchaseModal = document.querySelector("#purchase-modal"), purchaseForm = 
 const sourceModal = document.querySelector("#card-modal"), sourceForm = document.querySelector("#card-form");
 const salaryConfigForm = document.querySelector("#salary-config-form");
 
-// Actualizar opciones de plazos según frecuencia (Mensual / Quincenal)
-function updateInstallmentOptions(frequency, selectedMonths = 1, selectedPaid = 0) {
-  const monthsSelect = document.querySelector("#purchase-months");
-  const paidSelect = document.querySelector("#purchase-paid-months");
-  const labelTotal = document.querySelector("#label-total-installments");
-  const labelPaid = document.querySelector("#label-paid-installments");
-  
-  if (!monthsSelect || !paidSelect) return;
-
-  const isQuincenal = frequency === "quincenal";
-  if (labelTotal) labelTotal.textContent = isQuincenal ? "Quincenas totales" : "Meses totales";
-  if (labelPaid) labelPaid.textContent = isQuincenal ? "Quincenas ya pagadas" : "Meses ya pagados";
-
-  const totalOptions = isQuincenal 
-    ?
-    :;
-
-  monthsSelect.innerHTML = totalOptions.map(num => 
-    `<option value="${num}" ${num === Number(selectedMonths) ? "selected" : ""}>${num} ${isQuincenal ? (num === 1 ? "quincena" : "quincenas") : (num === 1 ? "mes" : "meses")}</option>`
-  ).join("");
-
-  const maxTotal = Number(monthsSelect.value) || 1;
-  paidSelect.innerHTML = Array.from({ length: maxTotal }, (_, i) => 
-    `<option value="${i}" ${i === Number(selectedPaid) ? "selected" : ""}>${i} ${isQuincenal ? "pagadas" : "pagados"}</option>`
-  ).join("");
-}
-
-const purchaseFreqEl = document.querySelector("#purchase-frequency");
-if (purchaseFreqEl) {
-  purchaseFreqEl.addEventListener("change", (e) => {
-    updateInstallmentOptions(e.target.value);
-  });
-}
-
-const purchaseMonthsEl = document.querySelector("#purchase-months");
-if (purchaseMonthsEl) {
-  purchaseMonthsEl.addEventListener("change", (e) => {
-    const maxTotal = Number(e.target.value) || 1;
-    const paidSelect = document.querySelector("#purchase-paid-months");
-    if (!paidSelect) return;
-    const currentPaid = Math.min(Number(paidSelect.value) || 0, maxTotal - 1);
-    const isQuincenal = purchaseFreqEl ? purchaseFreqEl.value === "quincenal" : false;
-    paidSelect.innerHTML = Array.from({ length: maxTotal }, (_, i) => 
-      `<option value="${i}" ${i === currentPaid ? "selected" : ""}>${i} ${isQuincenal ? "pagadas" : "pagados"}</option>`
-    ).join("");
-  });
-}
-
 function closePurchaseModal() { purchaseModal.classList.remove("is-open"); purchaseModal.setAttribute("aria-hidden", "true"); editingPurchaseId = null; }
 function openPurchaseModal(purchase = null) { 
-  editingPurchaseId = purchase?.id ?? null; 
-  purchaseForm.reset(); 
+  editingPurchaseId = purchase?.id ?? null; purchaseForm.reset(); 
   document.querySelector("#modal-title").textContent = purchase ? "Editar compra" : "Registrar compra"; 
   document.querySelector("#save-purchase").textContent = purchase ? "Guardar cambios" : "Guardar compra"; 
-  
-  const frequency = purchase?.frecuenciaPago || "mensual";
-  if (purchaseFreqEl) purchaseFreqEl.value = frequency;
-  updateInstallmentOptions(frequency, purchase?.mesesSinIntereses || 1, purchase?.mensualidadesPagadas || 0);
-
   if (purchase) { 
     document.querySelector("#purchase-name").value = purchase.nombre; 
     document.querySelector("#purchase-amount").value = purchase.montoTotal; 
     document.querySelector("#purchase-card").value = purchase.tarjeta; 
-    document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago || getDefaultFirstPaymentDate(startOfToday());
+    document.querySelector("#purchase-months").value = purchase.mesesSinIntereses; 
+    document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
+    if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
   } else {
     document.querySelector("#fechaPrimerPago").value = getDefaultFirstPaymentDate(startOfToday());
   }
-  purchaseModal.classList.add("is-open"); 
-  purchaseModal.setAttribute("aria-hidden", "false"); 
-  document.querySelector("#purchase-name").focus(); 
+  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "false"); document.querySelector("#purchase-name").focus(); 
 }
 
 function closeSourceModal() { sourceModal.classList.remove("is-open"); sourceModal.setAttribute("aria-hidden", "true"); editingSourceName = null; }
@@ -529,7 +399,7 @@ document.querySelector("#source-type").addEventListener("change", toggleSourceFi
 
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closePurchaseModal(); closeSourceModal(); } }); 
 
-// Navegación entre Pestañas
+// Navegación entre Pestañas (Dashboard, Desglose, Sueldo, Administrar)
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => { 
   document.querySelectorAll(".tab").forEach((item) => { 
     const active = item === tab; 
@@ -556,36 +426,11 @@ document.querySelector("#manage-table-body").addEventListener("click", (event) =
 
 purchaseForm.addEventListener("submit", (event) => { 
   event.preventDefault(); 
-  const data = new FormData(purchaseForm);
-  const amount = Number(data.get("monto"));
-  const frequency = data.get("frecuenciaPago") || "mensual";
-  const months = Number(data.get("meses"));
-  const paid = Number(data.get("mensualidadesPagadas"));
-  const fechaPrimerPago = data.get("fechaPrimerPago");
-  const error = document.querySelector("#form-error"); 
-
-  if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(months) || months < 1 || !Number.isInteger(paid) || paid < 0 || paid >= months) { 
-    error.textContent = "Revisa el monto y los plazos pagados."; 
-    return; 
-  } 
-
-  const changes = { 
-    nombre: data.get("nombre").trim(), 
-    montoTotal: amount, 
-    tarjeta: data.get("tarjeta"), 
-    frecuenciaPago: frequency,
-    mesesSinIntereses: months, 
-    mensualidadesPagadas: paid, 
-    fechaPrimerPago: fechaPrimerPago 
-  }; 
-
+  const data = new FormData(purchaseForm), amount = Number(data.get("monto")), months = Number(data.get("meses")), paid = Number(data.get("mensualidadesPagadas")), fechaPrimerPago = data.get("fechaPrimerPago"), error = document.querySelector("#form-error"); 
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(months) || months < 1 || !Number.isInteger(paid) || paid < 0 || paid > months) { error.textContent = "Revisa el monto y las mensualidades pagadas."; return; } 
+  const changes = { nombre: data.get("nombre").trim(), montoTotal: amount, tarjeta: data.get("tarjeta"), mesesSinIntereses: months, mensualidadesPagadas: paid, fechaPrimerPago: fechaPrimerPago }; 
   const index = purchases.findIndex(({ id }) => id === editingPurchaseId); 
-  if (index >= 0) {
-    purchases[index] = new Compra({ ...purchases[index], ...changes, saldoRestante: amount }); 
-  } else {
-    purchases.push(new Compra(changes)); 
-  }
-
+  if (index >= 0) purchases[index] = new Compra({ ...purchases[index], ...changes, saldoRestante: amount }); else purchases.push(new Compra(changes)); 
   saveToCloud(); 
   error.textContent = ""; 
   closePurchaseModal(); 
@@ -630,8 +475,8 @@ sourceForm.addEventListener("submit", (event) => {
     if (index >= 0) {
       const nameCollision = cards.some((c, i) => i !== index && c.nombre.toLowerCase() === newName.toLowerCase());
       if (nameCollision) {
-        error.textContent = "Ya existe otra fuente con ese nombre."; 
-        return; 
+        error.textContent = "Ya existe otra fuente con ese nombre.";
+        return;
       }
 
       cards[index] = new FuenteFinanciamiento(newName, cutoff || 15, due || 15, type, days); 
@@ -658,7 +503,7 @@ sourceForm.addEventListener("submit", (event) => {
   render(); 
 });
 
-// Guardar Sueldo
+// Guardar Sueldo desde la nueva pantalla de Sueldo
 if (salaryConfigForm) {
   salaryConfigForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -788,8 +633,7 @@ auth.onAuthStateChanged((user) => {
             nombre: compra, 
             montoTotal: monto, 
             tarjeta: "BBVA ORO", 
-            frecuenciaPago: "mensual",
-            mesesSinIntereses: 1, 
+            mesesSinIntereses: 1,
             fechaPrimerPago: defaultFirstDate
           }));
           saveToCloud();
@@ -805,8 +649,7 @@ auth.onAuthStateChanged((user) => {
             nombre: compra, 
             montoTotal: monto, 
             tarjeta: "BBVA ORO", 
-            frecuenciaPago: "mensual",
-            mesesSinIntereses: 1, 
+            mesesSinIntereses: 1,
             fechaPrimerPago: defaultFirstDate
           }));
         } else {
