@@ -11,18 +11,25 @@ const firebaseConfig = {
 // 2. Inicializar Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-// Configuración para compatibilidad total con redes de datos móviles (Telcel, AT&T, etc.)
+const auth = firebase.auth();
+
+// Compatibilidad móvil
 db.settings({
   experimentalAutoDetectLongPolling: true,
   merge: true
 });
-const auth = firebase.auth();
 
 let currentUser = null;
 let userDocRef = null;
 let unsubscribeFirestore = null;
 
-const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
+const STORAGE_KEYS = { 
+  cards: "finanzas.tarjetas", 
+  purchases: "finanzas.compras", 
+  updatedAt: "finanzas.ultimaActualizacion",
+  salary: "finanzas.sueldoConfig"
+};
+
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const dateFormatter = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short" });
 const monthFormatter = new Intl.DateTimeFormat("es-MX", { month: "short" });
@@ -46,7 +53,7 @@ function normalizePaymentDays(days) {
   return [...new Set((Array.isArray(days) ? days : String(days).split(",")).map(Number).filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))].sort((a, b) => a - b); 
 }
 
-const readStorage = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return Array.isArray(value) ? value : fallback; } catch { return fallback; } };
+const readStorage = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return value !== null ? value : fallback; } catch { return fallback; } };
 const writeStorage = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
 // Catálogo base de fuentes de financiamiento
@@ -87,6 +94,7 @@ const HISTORICAL_PURCHASES = [
 
 let cards = [];
 let purchases = [];
+let salaryConfig = { baseSalary: 0, currentIncome: 0, lastUpdated: "" };
 
 // Función para guardar en el espacio del usuario actual en Firestore
 async function saveToCloud() {
@@ -94,12 +102,14 @@ async function saveToCloud() {
   const timestamp = new Date().toISOString();
   localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
   localStorage.setItem(STORAGE_KEYS.purchases, JSON.stringify(purchases));
+  localStorage.setItem(STORAGE_KEYS.salary, JSON.stringify(salaryConfig));
   localStorage.setItem(STORAGE_KEYS.updatedAt, timestamp);
 
   try {
     await userDocRef.set({
       cards: cards.map(c => ({ ...c })),
       purchases: purchases.map(p => ({ ...p })),
+      salaryConfig: salaryConfig,
       updatedAt: timestamp
     });
   } catch (err) {
@@ -112,20 +122,18 @@ const localDateValue = (date) => `${date.getFullYear()}-${String(date.getMonth()
 const parseLocalDate = (value) => { const [year, month, day] = String(value).split("-").map(Number); return createDate(year, month - 1, day); };
 const startOfToday = () => { const date = new Date(); date.setHours(0, 0, 0, 0); return date; };
 
-// Regla del 1 y 15: Del 1 al 14 -> Se paga el 1; Del 15 al 31 -> Se paga el 15
+// Regla del 1 y 15: Del 1 al 14 -> Paga el 1; Del 15 al 31 -> Paga el 15
 function calculateDefaultPaymentDay(dayNumber) {
   return (dayNumber >= 1 && dayNumber <= 14) ? 1 : 15;
 }
 
-// Calcular la fecha predeterminada del primer pago para una compra nueva
+// Fecha predeterminada de primer pago al registrar compra
 function getDefaultFirstPaymentDate(baseDate = new Date()) {
   const day = baseDate.getDate();
   const paymentDay = calculateDefaultPaymentDay(day);
   let year = baseDate.getFullYear();
   let month = baseDate.getMonth();
-  
-  // Se programa para el siguiente corte/mes
-  month += 1;
+  month += 1; // Siguiente ciclo
   return localDateValue(createDate(year, month, paymentDay));
 }
 
@@ -160,7 +168,6 @@ function paymentDates(source, count, baseDate) {
     return dates; 
   }
   
-  // Regla: Si la compra ocurrió del 1 al 14 paga el 1, del 15 al 31 paga el 15
   const day = calculateDefaultPaymentDay(baseDate.getDate());
   const first = createDate(baseDate.getFullYear(), baseDate.getMonth() + 1, day);
   return Array.from({ length: count }, (_, index) => createDate(first.getFullYear(), first.getMonth() + index, day));
@@ -195,35 +202,44 @@ const allPayments = () => purchases.flatMap((purchase) => projectPayments(purcha
 
 function renderUpdatedBadge() { const raw = localStorage.getItem(STORAGE_KEYS.updatedAt); document.querySelector("#last-updated").textContent = raw ? `Actualizado: ${updatedFormatter.format(new Date(raw))}` : "Actualizado: —"; }
 
-function renderPokemonEasterEgg() { 
-  const layer = document.querySelector("#pokemon-layer"); 
-  if (!layer) return;
-  layer.style.opacity = '0';
-  setTimeout(() => {
-    const count = Math.floor(Math.random() * 5) + 10; 
-    const usedIds = new Set(); 
-    while (usedIds.size < count) usedIds.add(Math.floor(Math.random() * 151) + 1); 
-    const edgeSlots = [
-      { edge: 'top', pos: 15 }, { edge: 'top', pos: 35 }, { edge: 'top', pos: 65 }, { edge: 'top', pos: 85 },
-      { edge: 'bottom', pos: 15 }, { edge: 'bottom', pos: 35 }, { edge: 'bottom', pos: 65 }, { edge: 'bottom', pos: 85 },
-      { edge: 'left', pos: 5 }, { edge: 'left', pos: 15 }, { edge: 'left', pos: 25 }, { edge: 'left', pos: 35 }, { edge: 'left', pos: 45 }, { edge: 'left', pos: 55 }, { edge: 'left', pos: 65 }, { edge: 'left', pos: 75 }, { edge: 'left', pos: 85 }, { edge: 'left', pos: 95 },
-      { edge: 'right', pos: 5 }, { edge: 'right', pos: 15 }, { edge: 'right', pos: 25 }, { edge: 'right', pos: 35 }, { edge: 'right', pos: 45 }, { edge: 'right', pos: 55 }, { edge: 'right', pos: 65 }, { edge: 'right', pos: 75 }, { edge: 'right', pos: 85 }, { edge: 'right', pos: 95 }
-    ];
-    const shuffledSlots = edgeSlots.sort(() => 0.5 - Math.random()).slice(0, count);
-    layer.innerHTML = [...usedIds].map((id, index) => {
-      const slot = shuffledSlots[index];
-      const delay = (Math.random() * 4).toFixed(2); 
-      const variation = (Math.random() * 4 - 2).toFixed(2);
-      const finalPos = slot.pos + Number(variation);
-      let style = "", animClass = "";
-      if (slot.edge === 'top') { style = `top: -50px; left: ${finalPos}%;`; animClass = "pokemon-peek-top"; }
-      else if (slot.edge === 'bottom') { style = `bottom: -50px; left: ${finalPos}%;`; animClass = "pokemon-peek-bottom"; }
-      else if (slot.edge === 'left') { style = `top: ${finalPos}%; left: -50px;`; animClass = "pokemon-peek-left"; }
-      else { style = `top: ${finalPos}%; right: -50px;`; animClass = "pokemon-peek-right"; }
-      return `<img class="pokemon ${animClass}" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${id}.gif" style="${style} animation-delay: ${delay}s;" alt="" />`;
-    }).join(""); 
-    layer.style.opacity = '1';
-  }, 600); 
+// Determinar si un pago cae en la quincena actual
+function isPaymentInCurrentFortnight(paymentDate, today) {
+  if (paymentDate.getFullYear() !== today.getFullYear() || paymentDate.getMonth() !== today.getMonth()) return false;
+  const currentDay = today.getDate();
+  const payDay = paymentDate.getDate();
+  if (currentDay <= 15) {
+    return payDay <= 15;
+  } else {
+    return payDay > 15;
+  }
+}
+
+// Alerta y notificación inteligente de quincena
+function checkFortnightNotification(today) {
+  const day = today.getDate();
+  const banner = document.querySelector("#fortnight-banner");
+  const bannerTitle = document.querySelector("#banner-title");
+  const bannerSubtitle = document.querySelector("#banner-subtitle");
+  
+  // Días de cobro: 14, 15, 16 o fin de mes (28, 29, 30, 31, 1)
+  const isPayday = (day >= 14 && day <= 16) || day >= 28 || day === 1;
+
+  if (isPayday) {
+    banner.style.display = "flex";
+    const periodo = day <= 16 ? "Quincena del 15" : "Quincena de fin de mes / día 1";
+    bannerTitle.textContent = `🔔 ¡Cobro de ${periodo}!`;
+    bannerSubtitle.textContent = `Registra el ingreso recibido para calcular cuánto dinero libre te queda tras cubrir los pagos de esta quincena.`;
+    
+    // Si tiene permiso de notificación del navegador y es exactamente día 15 o 30/31/1
+    if ((day === 15 || day === 30 || day === 31 || day === 1) && window.Notification && Notification.permission === "granted") {
+      new Notification("Finanzas Personales - Recordatorio de Quincena", {
+        body: `Hoy es día de cobro (${periodo}). Revisa tus pagos programados y registra tu ingreso.`,
+        icon: "https://cdn-icons-png.flaticon.com/512/2830/2830284.png"
+      });
+    }
+  } else {
+    banner.style.display = "none";
+  }
 }
 
 function renderCharts(payments, total, today) {
@@ -241,13 +257,32 @@ function renderManageCards() { const body = document.querySelector("#manage-card
 function renderTotalsAndAlert(payments, total) { document.querySelector("#global-debt").textContent = money.format(total); document.querySelector("#global-debt-detail").textContent = `${purchases.length} compra${purchases.length === 1 ? "" : "s"} activa${purchases.length === 1 ? "" : "s"}`; const next = [...payments].sort((a, b) => a.date - b.date)[0]; document.querySelector("#urgent-date").textContent = next ? `Pago: ${formatDate(next.date)}` : "Sin pagos próximos"; document.querySelector("#urgent-card").textContent = next ? next.card : "—"; document.querySelector("#urgent-amount").textContent = money.format(next?.amount || 0); }
 
 function render() {
-  const today = startOfToday(), payments = allPayments(), total = purchases.reduce((sum, purchase) => sum + remainingBalance(purchase), 0), next = [...payments].sort((a, b) => a.date - b.date)[0], monthPayments = payments.filter(({ date }) => date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth());
-  document.querySelector("#total-balance").textContent = money.format(total);
-  document.querySelector("#balance-detail").textContent = purchases.length ? `${purchases.length} compra${purchases.length === 1 ? "" : "s"} activa${purchases.length === 1 ? "" : "s"}` : "Sin compras registradas";
-  document.querySelector("#monthly-payments").textContent = money.format(monthPayments.reduce((sum, payment) => sum + payment.amount, 0));
-  document.querySelector("#monthly-payment-detail").textContent = `${monthPayments.length} pago${monthPayments.length === 1 ? "" : "s"} proyectado${monthPayments.length === 1 ? "" : "s"}`;
-  document.querySelector("#msi-count").textContent = purchases.length; document.querySelector("#financed-total").textContent = `${money.format(total)} financiados`;
-  document.querySelector("#next-payment-date").textContent = next ? formatDate(next.date) : "—"; document.querySelector("#next-payment-card").textContent = next ? next.card : "Sin pagos próximos";
+  const today = startOfToday(), payments = allPayments(), total = purchases.reduce((sum, purchase) => sum + remainingBalance(purchase), 0), next = [...payments].sort((a, b) => a.date - b.date)[0];
+  
+  // Cálculo específico de pagos correspondientes a esta quincena
+  const currentFortnightPayments = payments.filter(p => isPaymentInCurrentFortnight(p.date, today));
+  const fortnightDebtTotal = currentFortnightPayments.reduce((sum, p) => sum + p.amount, 0);
+  
+  // Ingreso efectivo de la quincena (ingreso real o sueldo base)
+  const effectiveIncome = Number(salaryConfig.currentIncome) || Number(salaryConfig.baseSalary) || 0;
+  const availableCash = effectiveIncome - fortnightDebtTotal;
+
+  // Actualizar indicadores de sueldo y dinero libre
+  document.querySelector("#current-income-display").textContent = money.format(effectiveIncome);
+  document.querySelector("#income-status-detail").textContent = salaryConfig.baseSalary ? `Base: ${money.format(salaryConfig.baseSalary)} / quincena` : 'Toca "💼 Sueldo" para configurar';
+
+  const availableCashEl = document.querySelector("#available-cash-display");
+  availableCashEl.textContent = money.format(availableCash);
+  availableCashEl.style.color = availableCash >= 0 ? "#10b981" : "#fca5a5";
+  document.querySelector("#available-cash-detail").textContent = availableCash >= 0 
+    ? `Libre tras cubrir ${money.format(fortnightDebtTotal)} en pagos` 
+    : `Déficit de ${money.format(Math.abs(availableCash))} esta quincena`;
+
+  document.querySelector("#fortnight-debt-display").textContent = money.format(fortnightDebtTotal);
+  document.querySelector("#fortnight-debt-detail").textContent = `${currentFortnightPayments.length} pago${currentFortnightPayments.length === 1 ? "" : "s"} este ciclo`;
+
+  document.querySelector("#next-payment-date").textContent = next ? formatDate(next.date) : "—"; 
+  document.querySelector("#next-payment-card").textContent = next ? next.card : "Sin pagos próximos";
   
   document.querySelector("#cards-table-body").innerHTML = cards.map((source) => { const tipoLabel = source.tipo === "prestamo" ? "Préstamo" : (source.tipo === "departamental" ? "Departamental" : "Tarjeta"); return `<tr><td>${escapeHtml(source.nombre)}</td><td>${tipoLabel}</td><td>${sourceSchedule(source)}</td><td>${money.format(purchases.filter(({ tarjeta }) => tarjeta === source.nombre).reduce((sum, purchase) => sum + remainingBalance(purchase), 0))}</td></tr>`}).join("");
   document.querySelector("#purchases-table-body").innerHTML = purchases.length ? purchases.map((purchase) => { const installments = projectPayments(purchase), first = installments[0]; return `<tr><td>${escapeHtml(purchase.nombre)}</td><td>${escapeHtml(purchase.tarjeta)}</td><td>${first ? money.format(first.amount) : money.format(0)} / ${purchase.mesesSinIntereses} MSI</td><td>${first ? formatDate(first.date) : "Finalizado"}</td></tr>`; }).join("") : '<tr><td colspan="4" class="muted">Aún no hay compras registradas.</td></tr>';
@@ -255,302 +290,4 @@ function render() {
   const cardOptions = cards.filter(({ tipo }) => tipo === "tarjeta").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const loanOptions = cards.filter(({ tipo }) => tipo === "prestamo").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const deptOptions = cards.filter(({ tipo }) => tipo === "departamental").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
-  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito">${cardOptions}</optgroup>` : ""}${loanOptions ? `<optgroup label="Préstamos Personales">${loanOptions}</optgroup>` : ""}${deptOptions ? `<optgroup label="Departamentales">${deptOptions}</optgroup>` : ""}`;
-  
-  renderBreakdown(payments); renderManagePurchases(); renderManageCards(); renderTotalsAndAlert(payments, total); renderUpdatedBadge(); renderCharts(payments, total, today);
-}
-
-const purchaseModal = document.querySelector("#purchase-modal"), purchaseForm = document.querySelector("#purchase-form"), sourceModal = document.querySelector("#card-modal"), sourceForm = document.querySelector("#card-form");
-function closePurchaseModal() { purchaseModal.classList.remove("is-open"); purchaseModal.setAttribute("aria-hidden", "true"); editingPurchaseId = null; }
-function openPurchaseModal(purchase = null) { 
-  editingPurchaseId = purchase?.id ?? null; purchaseForm.reset(); 
-  document.querySelector("#modal-title").textContent = purchase ? "Editar compra" : "Registrar compra"; 
-  document.querySelector("#save-purchase").textContent = purchase ? "Guardar cambios" : "Guardar compra"; 
-  if (purchase) { 
-    document.querySelector("#purchase-name").value = purchase.nombre; 
-    document.querySelector("#purchase-amount").value = purchase.montoTotal; 
-    document.querySelector("#purchase-card").value = purchase.tarjeta; 
-    document.querySelector("#purchase-months").value = purchase.mesesSinIntereses; 
-    document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
-    if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
-  } else {
-    // Autocompletar la fecha de primer pago según la regla del 1 y 15
-    document.querySelector("#fechaPrimerPago").value = getDefaultFirstPaymentDate(startOfToday());
-  }
-  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "false"); document.querySelector("#purchase-name").focus(); 
-}
-
-function closeSourceModal() { sourceModal.classList.remove("is-open"); sourceModal.setAttribute("aria-hidden", "true"); editingSourceName = null; }
-function toggleSourceFields() { const loan = document.querySelector("#source-type").value === "prestamo"; document.querySelector("#credit-fields").hidden = loan; document.querySelector("#loan-fields").hidden = !loan; document.querySelector("#card-cutoff").required = !loan; document.querySelector("#card-due").required = !loan; document.querySelector("#loan-payment-days").required = loan; }
-function openSourceModal(source = null) { 
-  editingSourceName = source?.nombre ?? null; 
-  sourceForm.reset(); 
-  document.querySelector("#card-modal-title").textContent = source ? "Editar fuente" : "Registrar fuente"; 
-  document.querySelector("#save-card").textContent = source ? "Guardar cambios" : "Guardar fuente"; 
-  document.querySelector("#card-name").disabled = Boolean(source); 
-  if (source) { 
-    document.querySelector("#card-name").value = source.nombre; 
-    document.querySelector("#source-type").value = source.tipo; 
-    document.querySelector("#card-cutoff").value = source.diaCorte; 
-    document.querySelector("#card-due").value = source.diaLimitePago; 
-    document.querySelector("#loan-payment-days").value = source.diasPago.join(", "); 
-  } 
-  toggleSourceFields(); 
-  sourceModal.classList.add("is-open"); 
-  sourceModal.setAttribute("aria-hidden", "false"); 
-  document.querySelector(source ? "#source-type" : "#card-name").focus(); 
-}
-
-document.querySelector("#open-purchase-modal").addEventListener("click", () => openPurchaseModal()); 
-document.querySelector("#manage-add-purchase").addEventListener("click", () => openPurchaseModal()); 
-document.querySelector("#close-purchase-modal").addEventListener("click", closePurchaseModal); 
-document.querySelector("#cancel-purchase").addEventListener("click", closePurchaseModal); 
-purchaseModal.addEventListener("click", (event) => { if (event.target === purchaseModal) closePurchaseModal(); });
-
-document.querySelector("#open-card-modal").addEventListener("click", () => openSourceModal()); 
-document.querySelector("#close-card-modal").addEventListener("click", closeSourceModal); 
-document.querySelector("#cancel-card").addEventListener("click", closeSourceModal); 
-sourceModal.addEventListener("click", (event) => { if (event.target === sourceModal) closeSourceModal(); }); 
-document.querySelector("#source-type").addEventListener("change", toggleSourceFields);
-
-document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closePurchaseModal(); closeSourceModal(); } }); 
-document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => { 
-  document.querySelectorAll(".tab").forEach((item) => { const active = item === tab; item.classList.toggle("is-active", active); item.setAttribute("aria-selected", active); }); 
-  document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== tab.dataset.view; }); 
-}));
-
-document.querySelector("#manage-table-body").addEventListener("click", (event) => { 
-  const button = event.target.closest("button[data-action]"); 
-  if (!button) return; 
-  const index = purchases.findIndex(({ id }) => id === button.dataset.id); 
-  if (index < 0) return; 
-  if (button.dataset.action === "edit") openPurchaseModal(purchases[index]); 
-  if (button.dataset.action === "delete" && window.confirm(`¿Eliminar “${purchases[index].nombre}”?`)) { 
-    purchases.splice(index, 1); 
-    saveToCloud(); 
-    render(); 
-  } 
-});
-
-purchaseForm.addEventListener("submit", (event) => { 
-  event.preventDefault(); 
-  const data = new FormData(purchaseForm), amount = Number(data.get("monto")), months = Number(data.get("meses")), paid = Number(data.get("mensualidadesPagadas")), fechaPrimerPago = data.get("fechaPrimerPago"), error = document.querySelector("#form-error"); 
-  if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(months) || months < 1 || !Number.isInteger(paid) || paid < 0 || paid > months) { error.textContent = "Revisa el monto y las mensualidades pagadas."; return; } 
-  const changes = { nombre: data.get("nombre").trim(), montoTotal: amount, tarjeta: data.get("tarjeta"), mesesSinIntereses: months, mensualidadesPagadas: paid, fechaPrimerPago: fechaPrimerPago }; 
-  const index = purchases.findIndex(({ id }) => id === editingPurchaseId); 
-  if (index >= 0) purchases[index] = new Compra({ ...purchases[index], ...changes, saldoRestante: amount }); else purchases.push(new Compra(changes)); 
-  saveToCloud(); 
-  error.textContent = ""; 
-  closePurchaseModal(); 
-  render(); 
-});
-
-document.querySelector("#manage-cards-table-body").addEventListener("click", (event) => { 
-  const button = event.target.closest("button[data-source-action]"); 
-  if (!button || button.disabled) return; 
-  const index = cards.findIndex(({ nombre }) => nombre === button.dataset.sourceName); 
-  if (index < 0) return; 
-  if (button.dataset.sourceAction === "edit") openSourceModal(cards[index]); 
-  if (button.dataset.sourceAction === "delete") { 
-    const replacement = cards.find((_, current) => current !== index); 
-    if (!replacement && purchases.some(({ tarjeta }) => tarjeta === cards[index].nombre)) return; 
-    if (replacement) { 
-      purchases = purchases.map((purchase) => purchase.tarjeta === cards[index].nombre ? new Compra({ ...purchase, tarjeta: replacement.nombre }) : purchase); 
-    } 
-    cards.splice(index, 1); 
-    saveToCloud(); 
-    render(); 
-  } 
-});
-
-sourceForm.addEventListener("submit", (event) => { 
-  event.preventDefault(); 
-  const data = new FormData(sourceForm), name = editingSourceName ?? data.get("nombre").trim(), type = data.get("tipo"), cutoff = Number(data.get("corte")), due = Number(data.get("limite")), days = normalizePaymentDays(data.get("diasPago")), error = document.querySelector("#card-form-error"); 
-  if (!name || ((type === "tarjeta" || type === "departamental") && (!Number.isInteger(cutoff) || cutoff < 1 || cutoff > 31 || !Number.isInteger(due) || due < 1 || due > 31)) || (type === "prestamo" && !days.length)) { error.textContent = "Completa los datos de la fuente correctamente."; return; } 
-  const index = cards.findIndex(({ nombre }) => nombre === editingSourceName); 
-  if (index >= 0) cards[index] = new FuenteFinanciamiento(editingSourceName, cutoff || 15, due || 15, type, days); else if (cards.some((source) => source.nombre.toLocaleLowerCase() === name.toLocaleLowerCase())) { error.textContent = "Ya existe una fuente con ese nombre."; return; } else cards.push(new FuenteFinanciamiento(name, cutoff || 15, due || 15, type, days)); 
-  saveToCloud(); 
-  error.textContent = ""; 
-  closeSourceModal(); 
-  render(); 
-});
-
-// --- Lógica de Autenticación de Usuarios y Recuperación de Contraseña ---
-const authScreen = document.querySelector("#auth-screen");
-const mainApp = document.querySelector("#main-app");
-const bottomNav = document.querySelector("#bottom-nav");
-const authForm = document.querySelector("#auth-form");
-const authTitle = document.querySelector("#auth-title");
-const authSubmit = document.querySelector("#auth-submit");
-const toggleAuthMode = document.querySelector("#toggle-auth-mode");
-const authError = document.querySelector("#auth-error");
-const userDisplay = document.querySelector("#user-display");
-const logoutButton = document.querySelector("#logout-button");
-const forgotPasswordBtn = document.querySelector("#forgot-password-btn");
-
-let isRegisterMode = false;
-
-function getAuthErrorMessage(err) {
-  const code = err.code || "";
-  switch (code) {
-    case "auth/invalid-email": 
-      return "El formato de correo no es válido.";
-    case "auth/user-not-found": 
-    case "auth/wrong-password": 
-    case "auth/invalid-credential": 
-      return "Correo o contraseña incorrectos.";
-    case "auth/email-already-in-use": 
-      return "Ya existe una cuenta con este correo. Cambia a Iniciar sesión.";
-    case "auth/weak-password": 
-      return "La contraseña debe tener mínimo 6 caracteres.";
-    case "auth/unauthorized-domain": 
-      return "Dominio no autorizado en Firebase. Agrega diazmfernando96-boop.github.io en Firebase Console > Authentication > Settings.";
-    case "auth/operation-not-allowed":
-      return "El proveedor de correo no está habilitado en Firebase Console.";
-    default: 
-      return `Error (${code}): ${err.message || "Verifica tus datos."}`;
-  }
-}
-
-// Alternar entre modo Registro e Inicio de Sesión
-toggleAuthMode.addEventListener("click", () => {
-  isRegisterMode = !isRegisterMode;
-  authTitle.textContent = isRegisterMode ? "Crear cuenta" : "Iniciar sesión";
-  authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
-  toggleAuthMode.textContent = isRegisterMode ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate";
-  if (forgotPasswordBtn) forgotPasswordBtn.style.display = isRegisterMode ? "none" : "block";
-  authError.textContent = "";
-});
-
-// Enviar enlace de restablecimiento de contraseña
-if (forgotPasswordBtn) {
-  forgotPasswordBtn.addEventListener("click", async () => {
-    const email = document.querySelector("#auth-email").value.trim();
-    authError.style.color = "#fca5a5";
-    
-    if (!email) {
-      authError.textContent = "Ingresa tu correo electrónico arriba para enviarte el enlace.";
-      document.querySelector("#auth-email").focus();
-      return;
-    }
-
-    try {
-      authError.style.color = "#a78bfa";
-      authError.textContent = "Enviando enlace de recuperación...";
-      await auth.sendPasswordResetEmail(email);
-      authError.style.color = "#55e6ab";
-      authError.textContent = "¡Enlace enviado! Revisa tu bandeja de entrada o spam para restablecer tu contraseña.";
-    } catch (err) {
-      authError.style.color = "#fca5a5";
-      if (err.code === "auth/user-not-found") {
-        authError.textContent = "No existe una cuenta registrada con este correo.";
-      } else if (err.code === "auth/invalid-email") {
-        authError.textContent = "Ingresa un correo electrónico válido.";
-      } else {
-        authError.textContent = `Error: ${err.message}`;
-      }
-    }
-  });
-}
-
-// Enviar formulario de login / registro
-authForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const email = document.querySelector("#auth-email").value.trim();
-  const password = document.querySelector("#auth-password").value;
-  authError.style.color = "#fca5a5";
-  authError.textContent = "";
-  authSubmit.disabled = true;
-  authSubmit.textContent = "Procesando...";
-
-  try {
-    if (isRegisterMode) {
-      await auth.createUserWithEmailAndPassword(email, password);
-    } else {
-      await auth.signInWithEmailAndPassword(email, password);
-    }
-  } catch (err) {
-    authError.textContent = getAuthErrorMessage(err);
-  } finally {
-    authSubmit.disabled = false;
-    authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
-  }
-});
-
-logoutButton.addEventListener("click", () => {
-  auth.signOut();
-});
-
-// Escuchar cambios de sesión de usuario en Firebase
-auth.onAuthStateChanged((user) => {
-  if (unsubscribeFirestore) {
-    unsubscribeFirestore();
-    unsubscribeFirestore = null;
-  }
-
-  if (user) {
-    currentUser = user;
-    userDocRef = db.collection("users").doc(user.uid);
-    authScreen.style.display = "none";
-    mainApp.style.display = "block";
-    bottomNav.style.display = "flex";
-    userDisplay.textContent = user.email || "Mi cuenta";
-
-    // Validar si es tu cuenta personal
-    const isOwner = user.email && user.email.toLowerCase() === "diazmfernando96@gmail.com";
-
-    // Escucha en tiempo real de los datos exclusivos del usuario
-    unsubscribeFirestore = userDocRef.onSnapshot((snapshot) => {
-      if (snapshot.exists) {
-        const data = snapshot.data();
-        cards = Array.isArray(data.cards) ? data.cards.map((c) => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago)) : [];
-        purchases = Array.isArray(data.purchases) ? data.purchases.map((d) => new Compra(d)) : [];
-        
-        // Si es TU cuenta y no tiene compras registradas, precarga tu catálogo histórico
-        if (isOwner && purchases.length === 0) {
-          cards = [...INITIAL_CARDS];
-          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
-          saveToCloud();
-        }
-
-        if (data.updatedAt) localStorage.setItem(STORAGE_KEYS.updatedAt, data.updatedAt);
-        render();
-      } else {
-        if (isOwner) {
-          // Tu cuenta recibe tus tarjetas y compras históricas
-          cards = [...INITIAL_CARDS];
-          purchases = HISTORICAL_PURCHASES.map(({ compra, monto }) => new Compra({ nombre: compra, montoTotal: monto, tarjeta: "BBVA ORO", mesesSinIntereses: 1 }));
-        } else {
-          // Cualquier otro usuario nuevo inicia en ceros
-          cards = [...INITIAL_CARDS];
-          purchases = [];
-        }
-        saveToCloud();
-        render();
-      }
-    }, (error) => {
-      console.error("Error en Firestore:", error);
-    });
-
-  } else {
-    currentUser = null;
-    userDocRef = null;
-    cards = [];
-    purchases = [];
-    authScreen.style.display = "grid";
-    mainApp.style.display = "none";
-    bottomNav.style.display = "none";
-  }
-});
-
-// Desinstalar cualquier Service Worker para evitar bloqueos de red
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      registration.unregister();
-    }
-  });
-}
-
-renderPokemonEasterEgg(); 
-setInterval(renderPokemonEasterEgg, 30000);
+  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito
