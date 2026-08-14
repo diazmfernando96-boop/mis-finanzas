@@ -13,7 +13,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-// Compatibilidad móvil
+// Compatibilidad con redes móviles
 db.settings({
   experimentalAutoDetectLongPolling: true,
   merge: true
@@ -96,7 +96,7 @@ let cards = [];
 let purchases = [];
 let salaryConfig = { baseSalary: 0, currentIncome: 0, lastUpdated: "" };
 
-// Función para guardar en el espacio del usuario actual en Firestore
+// Guardar en Firestore
 async function saveToCloud() {
   if (!userDocRef) return;
   const timestamp = new Date().toISOString();
@@ -122,7 +122,7 @@ const localDateValue = (date) => `${date.getFullYear()}-${String(date.getMonth()
 const parseLocalDate = (value) => { const [year, month, day] = String(value).split("-").map(Number); return createDate(year, month - 1, day); };
 const startOfToday = () => { const date = new Date(); date.setHours(0, 0, 0, 0); return date; };
 
-// Regla del 1 y 15: Del 1 al 14 -> Paga el 1; Del 15 al 31 -> Paga el 15
+// Regla: Compras del 1 al 14 pagan el 1; Compras del 15 al 31 pagan el 15
 function calculateDefaultPaymentDay(dayNumber) {
   return (dayNumber >= 1 && dayNumber <= 14) ? 1 : 15;
 }
@@ -133,7 +133,7 @@ function getDefaultFirstPaymentDate(baseDate = new Date()) {
   const paymentDay = calculateDefaultPaymentDay(day);
   let year = baseDate.getFullYear();
   let month = baseDate.getMonth();
-  month += 1; // Siguiente ciclo
+  month += 1;
   return localDateValue(createDate(year, month, paymentDay));
 }
 
@@ -202,7 +202,14 @@ const allPayments = () => purchases.flatMap((purchase) => projectPayments(purcha
 
 function renderUpdatedBadge() { const raw = localStorage.getItem(STORAGE_KEYS.updatedAt); document.querySelector("#last-updated").textContent = raw ? `Actualizado: ${updatedFormatter.format(new Date(raw))}` : "Actualizado: —"; }
 
-// Determinar si un pago cae en la quincena actual
+// Determinar pagos que vencen en la quincena del 15 del mes actual
+function isPaymentInFortnight15(paymentDate, today) {
+  return paymentDate.getFullYear() === today.getFullYear() && 
+         paymentDate.getMonth() === today.getMonth() && 
+         paymentDate.getDate() <= 15;
+}
+
+// Determinar qué pagos corresponden al ciclo quincenal activo
 function isPaymentInCurrentFortnight(paymentDate, today) {
   const currentDay = today.getDate();
   const currentMonth = today.getMonth();
@@ -219,34 +226,6 @@ function isPaymentInCurrentFortnight(paymentDate, today) {
     const nextMonthDate = new Date(currentYear, currentMonth + 1, 1);
     const isNextMonthStart = (payYear === nextMonthDate.getFullYear() && payMonth === nextMonthDate.getMonth() && payDay <= 14);
     return isSameMonthEnd || isNextMonthStart;
-  }
-}
-
-// Alerta y notificación de quincena
-function checkFortnightNotification(today) {
-  const day = today.getDate();
-  const banner = document.querySelector("#fortnight-banner");
-  const bannerTitle = document.querySelector("#banner-title");
-  const bannerSubtitle = document.querySelector("#banner-subtitle");
-  
-  const isPayday = (day >= 14 && day <= 16) || day >= 28 || day === 1;
-
-  if (banner) {
-    if (isPayday) {
-      banner.style.display = "flex";
-      const periodo = day <= 16 ? "Quincena del 15" : "Quincena de fin de mes / día 1";
-      if (bannerTitle) bannerTitle.textContent = `🔔 ¡Cobro de ${periodo}!`;
-      if (bannerSubtitle) bannerSubtitle.textContent = `Registra tu ingreso para calcular tu dinero disponible después de pagos.`;
-      
-      if ((day === 15 || day === 30 || day === 31 || day === 1) && window.Notification && Notification.permission === "granted") {
-        new Notification("Finanzas Personales - Recordatorio de Quincena", {
-          body: `Hoy es día de cobro (${periodo}). Revisa tus pagos programados y registra tu ingreso.`,
-          icon: "https://cdn-icons-png.flaticon.com/512/2830/2830284.png"
-        });
-      }
-    } else {
-      banner.style.display = "none";
-    }
   }
 }
 
@@ -299,31 +278,48 @@ function renderTotalsAndAlert(payments, total) { document.querySelector("#global
 function render() {
   const today = startOfToday(), payments = allPayments(), total = purchases.reduce((sum, purchase) => sum + remainingBalance(purchase), 0), next = [...payments].sort((a, b) => a.date - b.date)[0];
   
-  // Cálculo de pagos asignados a la quincena actual
-  const currentFortnightPayments = payments.filter(p => isPaymentInCurrentFortnight(p.date, today));
-  const fortnightDebtTotal = currentFortnightPayments.reduce((sum, p) => sum + p.amount, 0);
+  // 1. Cobro exclusivo de la quincena del 15 para la pantalla principal (Dashboard)
+  const payments15 = payments.filter(p => isPaymentInFortnight15(p.date, today));
+  const totalFortnight15 = payments15.reduce((sum, p) => sum + p.amount, 0);
+
+  document.querySelector("#total-balance").textContent = money.format(total);
+  document.querySelector("#balance-detail").textContent = purchases.length ? `${purchases.length} compra${purchases.length === 1 ? "" : "s"} activa${purchases.length === 1 ? "" : "s"}` : "Sin compras registradas";
   
-  // Ingreso efectivo de la quincena
-  const effectiveIncome = Number(salaryConfig.currentIncome) || Number(salaryConfig.baseSalary) || 0;
-  const availableCash = effectiveIncome - fortnightDebtTotal;
+  document.querySelector("#fortnight-15-display").textContent = money.format(totalFortnight15);
+  document.querySelector("#fortnight-15-detail").textContent = `${payments15.length} pago${payments15.length === 1 ? "" : "s"} al día 15`;
 
-  // Actualizar paneles de sueldo y dinero libre
-  document.querySelector("#current-income-display").textContent = money.format(effectiveIncome);
-  document.querySelector("#income-status-detail").textContent = salaryConfig.baseSalary ? `Base: ${money.format(salaryConfig.baseSalary)} / quincena` : 'Toca "💼 Sueldo" para configurar';
-
-  const availableCashEl = document.querySelector("#available-cash-display");
-  availableCashEl.textContent = money.format(availableCash);
-  availableCashEl.style.color = availableCash >= 0 ? "#10b981" : "#fca5a5";
-  document.querySelector("#available-cash-detail").textContent = availableCash >= 0 
-    ? `Libre tras cubrir ${money.format(fortnightDebtTotal)} en pagos` 
-    : `Déficit de ${money.format(Math.abs(availableCash))} esta quincena`;
-
-  document.querySelector("#fortnight-debt-display").textContent = money.format(fortnightDebtTotal);
-  document.querySelector("#fortnight-debt-detail").textContent = `${currentFortnightPayments.length} pago${currentFortnightPayments.length === 1 ? "" : "s"} este ciclo`;
+  document.querySelector("#msi-count").textContent = purchases.length; 
+  document.querySelector("#financed-total").textContent = `${money.format(total)} financiados`;
 
   document.querySelector("#next-payment-date").textContent = next ? formatDate(next.date) : "—"; 
   document.querySelector("#next-payment-card").textContent = next ? next.card : "Sin pagos próximos";
   
+  // 2. Renderizado de la Pantalla de Sueldo
+  const currentFortnightPayments = payments.filter(p => isPaymentInCurrentFortnight(p.date, today));
+  const fortnightDebtTotal = currentFortnightPayments.reduce((sum, p) => sum + p.amount, 0);
+  const effectiveIncome = Number(salaryConfig.currentIncome) || Number(salaryConfig.baseSalary) || 0;
+  const availableCash = effectiveIncome - fortnightDebtTotal;
+
+  document.querySelector("#salary-base-input").value = salaryConfig.baseSalary || "";
+  document.querySelector("#salary-income-input").value = salaryConfig.currentIncome || salaryConfig.baseSalary || "";
+
+  document.querySelector("#salary-income-display").textContent = money.format(effectiveIncome);
+  document.querySelector("#salary-income-base-detail").textContent = salaryConfig.baseSalary ? `Base: ${money.format(salaryConfig.baseSalary)} / quincena` : "Sin sueldo base definido";
+
+  document.querySelector("#salary-fortnight-debt-display").textContent = money.format(fortnightDebtTotal);
+  document.querySelector("#salary-fortnight-debt-detail").textContent = `${currentFortnightPayments.length} pago${currentFortnightPayments.length === 1 ? "" : "s"} en este ciclo`;
+
+  const availableCashEl = document.querySelector("#salary-available-cash-display");
+  availableCashEl.textContent = money.format(availableCash);
+  availableCashEl.style.color = availableCash >= 0 ? "#10b981" : "#fca5a5";
+  document.querySelector("#salary-available-cash-detail").textContent = availableCash >= 0 
+    ? `Libre tras cubrir ${money.format(fortnightDebtTotal)} en pagos` 
+    : `Déficit de ${money.format(Math.abs(availableCash))} esta quincena`;
+
+  const salaryTableBody = document.querySelector("#salary-payments-table-body");
+  salaryTableBody.innerHTML = currentFortnightPayments.length ? currentFortnightPayments.map((p) => `<tr><td>${formatDate(p.date)}</td><td>${escapeHtml(p.purchase.nombre)}</td><td>${escapeHtml(p.card)}</td><td>${money.format(p.amount)}</td></tr>`).join("") : '<tr><td colspan="4" class="muted">No hay pagos programados para esta quincena.</td></tr>';
+
+  // 3. Tablas de Fuentes y Compras en Dashboard
   document.querySelector("#cards-table-body").innerHTML = cards.map((source) => { const tipoLabel = source.tipo === "prestamo" ? "Préstamo" : (source.tipo === "departamental" ? "Departamental" : "Tarjeta"); return `<tr><td>${escapeHtml(source.nombre)}</td><td>${tipoLabel}</td><td>${sourceSchedule(source)}</td><td>${money.format(purchases.filter(({ tarjeta }) => tarjeta === source.nombre).reduce((sum, purchase) => sum + remainingBalance(purchase), 0))}</td></tr>`}).join("");
   document.querySelector("#purchases-table-body").innerHTML = purchases.length ? purchases.map((purchase) => { const installments = projectPayments(purchase), first = installments[0]; return `<tr><td>${escapeHtml(purchase.nombre)}</td><td>${escapeHtml(purchase.tarjeta)}</td><td>${first ? money.format(first.amount) : money.format(0)} / ${purchase.mesesSinIntereses} MSI</td><td>${first ? formatDate(first.date) : "Finalizado"}</td></tr>`; }).join("") : '<tr><td colspan="4" class="muted">Aún no hay compras registradas.</td></tr>';
   
@@ -338,13 +334,12 @@ function render() {
   renderTotalsAndAlert(payments, total); 
   renderUpdatedBadge(); 
   renderCharts(payments, total, today);
-  checkFortnightNotification(today);
 }
 
 // Modales y Formularios
 const purchaseModal = document.querySelector("#purchase-modal"), purchaseForm = document.querySelector("#purchase-form");
 const sourceModal = document.querySelector("#card-modal"), sourceForm = document.querySelector("#card-form");
-const salaryModal = document.querySelector("#salary-modal"), salaryForm = document.querySelector("#salary-form");
+const salaryConfigForm = document.querySelector("#salary-config-form");
 
 function closePurchaseModal() { purchaseModal.classList.remove("is-open"); purchaseModal.setAttribute("aria-hidden", "true"); editingPurchaseId = null; }
 function openPurchaseModal(purchase = null) { 
@@ -367,7 +362,6 @@ function openPurchaseModal(purchase = null) {
 function closeSourceModal() { sourceModal.classList.remove("is-open"); sourceModal.setAttribute("aria-hidden", "true"); editingSourceName = null; }
 function toggleSourceFields() { const loan = document.querySelector("#source-type").value === "prestamo"; document.querySelector("#credit-fields").hidden = loan; document.querySelector("#loan-fields").hidden = !loan; document.querySelector("#card-cutoff").required = !loan; document.querySelector("#card-due").required = !loan; document.querySelector("#loan-payment-days").required = loan; }
 
-// Apertura de modal con campo de nombre editable
 function openSourceModal(source = null) { 
   editingSourceName = source?.nombre ?? null; 
   sourceForm.reset(); 
@@ -375,7 +369,7 @@ function openSourceModal(source = null) {
   document.querySelector("#save-card").textContent = source ? "Guardar cambios" : "Guardar fuente"; 
   
   const nameInput = document.querySelector("#card-name");
-  nameInput.disabled = false; // Habilitado para permitir edición
+  nameInput.disabled = false;
   
   if (source) { 
     nameInput.value = source.nombre; 
@@ -390,16 +384,7 @@ function openSourceModal(source = null) {
   nameInput.focus(); 
 }
 
-function closeSalaryModal() { salaryModal.classList.remove("is-open"); salaryModal.setAttribute("aria-hidden", "true"); }
-function openSalaryModal() {
-  document.querySelector("#base-salary").value = salaryConfig.baseSalary || "";
-  document.querySelector("#current-income").value = salaryConfig.currentIncome || salaryConfig.baseSalary || "";
-  salaryModal.classList.add("is-open");
-  salaryModal.setAttribute("aria-hidden", "false");
-  document.querySelector("#current-income").focus();
-}
-
-// Botones y eventos
+// Botones y eventos de apertura/cierre
 document.querySelector("#open-purchase-modal").addEventListener("click", () => openPurchaseModal()); 
 document.querySelector("#manage-add-purchase").addEventListener("click", () => openPurchaseModal()); 
 document.querySelector("#close-purchase-modal").addEventListener("click", closePurchaseModal); 
@@ -412,30 +397,18 @@ document.querySelector("#cancel-card").addEventListener("click", closeSourceModa
 sourceModal.addEventListener("click", (event) => { if (event.target === sourceModal) closeSourceModal(); }); 
 document.querySelector("#source-type").addEventListener("change", toggleSourceFields);
 
-document.querySelector("#open-salary-modal").addEventListener("click", openSalaryModal);
-document.querySelector("#close-salary-modal").addEventListener("click", closeSalaryModal);
-document.querySelector("#cancel-salary").addEventListener("click", closeSalaryModal);
-document.querySelector("#banner-action-btn").addEventListener("click", openSalaryModal);
-salaryModal.addEventListener("click", (event) => { if (event.target === salaryModal) closeSalaryModal(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closePurchaseModal(); closeSourceModal(); } }); 
 
-// Activar notificaciones del navegador
-document.querySelector("#enable-notifications-btn").addEventListener("click", async () => {
-  if (!("Notification" in window)) {
-    alert("Este navegador no soporta notificaciones de escritorio.");
-    return;
-  }
-  const perm = await Notification.requestPermission();
-  if (perm === "granted") {
-    alert("¡Notificaciones activadas! Te avisaremos en cada fecha de quincena.");
-  } else {
-    alert("Permiso de notificaciones no otorgado.");
-  }
-});
-
-document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closePurchaseModal(); closeSourceModal(); closeSalaryModal(); } }); 
+// Navegación entre Pestañas (Dashboard, Desglose, Sueldo, Administrar)
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => { 
-  document.querySelectorAll(".tab").forEach((item) => { const active = item === tab; item.classList.toggle("is-active", active); item.setAttribute("aria-selected", active); }); 
-  document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== tab.dataset.view; }); 
+  document.querySelectorAll(".tab").forEach((item) => { 
+    const active = item === tab; 
+    item.classList.toggle("is-active", active); 
+    item.setAttribute("aria-selected", active); 
+  }); 
+  document.querySelectorAll(".view").forEach((view) => { 
+    view.hidden = view.id !== tab.dataset.view; 
+  }); 
 }));
 
 document.querySelector("#manage-table-body").addEventListener("click", (event) => { 
@@ -482,7 +455,6 @@ document.querySelector("#manage-cards-table-body").addEventListener("click", (ev
   } 
 });
 
-// Guardar fuente con soporte para renombrar y actualizar compras asociadas
 sourceForm.addEventListener("submit", (event) => { 
   event.preventDefault(); 
   const data = new FormData(sourceForm);
@@ -531,19 +503,20 @@ sourceForm.addEventListener("submit", (event) => {
   render(); 
 });
 
-// Guardar Sueldo
-salaryForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const data = new FormData(salaryForm);
-  salaryConfig = {
-    baseSalary: Number(data.get("baseSalary")) || 0,
-    currentIncome: Number(data.get("currentIncome")) || 0,
-    lastUpdated: new Date().toISOString()
-  };
-  saveToCloud();
-  closeSalaryModal();
-  render();
-});
+// Guardar Sueldo desde la nueva pantalla de Sueldo
+if (salaryConfigForm) {
+  salaryConfigForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = new FormData(salaryConfigForm);
+    salaryConfig = {
+      baseSalary: Number(data.get("baseSalary")) || 0,
+      currentIncome: Number(data.get("currentIncome")) || 0,
+      lastUpdated: new Date().toISOString()
+    };
+    saveToCloud();
+    render();
+  });
+}
 
 // --- Lógica de Autenticación de Usuarios ---
 const authScreen = document.querySelector("#auth-screen");
