@@ -208,3 +208,25 @@ input:focus, select:focus { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgb(139
   .doughnut-card, .flow-chart-card { min-height: 260px; }
   .bottom-nav { bottom: 10px; width: calc(100% - 20px); } 
 }
+
+/* ===================================================
+   ICONO DE CALENDARIO EN COLOR BLANCO
+   =================================================== */
+
+input[type="date"] {
+  color-scheme: dark; /* Adapta el selector nativo al tema oscuro */
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1); /* Convierte el icono negro a blanco */
+  cursor: pointer;
+  opacity: 0.9;
+  padding: 4px;
+  border-radius: 4px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
