@@ -269,7 +269,83 @@ function renderCharts(payments, total, today) {
   if (flowChart) flowChart.destroy(); flowChart = new Chart(canvas, { type: "line", data: { labels: months.map((month) => monthFormatter.format(month).toUpperCase()), datasets: [{ data: amounts, borderColor: "#a78bfa", borderWidth: 3, backgroundColor: gradient, fill: true, tension: .4, pointBackgroundColor: "#10b981", pointBorderColor: "#09090e", pointBorderWidth: 3, pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false }, border: { display: false }, ticks: { color: "#858ba2" } }, y: { display: false, beginAtZero: true } }, plugins: { legend: { display: false } } } });
 }
 
-function renderBreakdown(payments) { const body = document.querySelector("#breakdown-table-body"); const future = payments.sort((a, b) => a.date - b.date); body.innerHTML = future.length ? future.map((payment) => `<tr><td>${formatDate(payment.date)}</td><td>${escapeHtml(payment.purchase.nombre)}</td><td>${escapeHtml(payment.card)}</td><td>${payment.number}/${payment.purchase.mesesSinIntereses}</td><td>${money.format(payment.amount)}</td></tr>`).join("") : '<tr><td colspan="5" class="muted">No hay pagos futuros por proyectar.</td></tr>'; }
+function renderBreakdown(payments) { 
+  const container = document.querySelector("#breakdown-cards-container"); 
+  
+  if (!payments || payments.length === 0) {
+    container.innerHTML = '<article class="panel"><p class="muted">No hay pagos futuros por proyectar.</p></article>';
+    return;
+  }
+
+  // 1. Agrupar la lista plana de pagos por cada compra individual
+  const groupedPayments = {};
+  payments.forEach(payment => {
+    if (!groupedPayments[payment.purchase.id]) {
+      groupedPayments[payment.purchase.id] = {
+        purchase: payment.purchase,
+        card: payment.card,
+        installments: [],
+        totalRemaining: 0
+      };
+    }
+    groupedPayments[payment.purchase.id].installments.push(payment);
+    groupedPayments[payment.purchase.id].totalRemaining += payment.amount;
+  });
+
+  // 2. Convertir el objeto a arreglo y ordenar por la deuda restante (de mayor a menor)
+  const purchasesWithDebt = Object.values(groupedPayments)
+    .sort((a, b) => b.totalRemaining - a.totalRemaining); 
+
+  // 3. Generar las tarjetas expansibles
+  container.innerHTML = purchasesWithDebt.map(group => {
+    // Ordenar las parcialidades de esta compra específica por fecha
+    const sortedInstallments = group.installments.sort((a, b) => a.date - b.date);
+    const nextPayment = sortedInstallments[0];
+    const remainingCount = sortedInstallments.length;
+
+    // Crear la lista interna de mensualidades
+    const installmentsHtml = sortedInstallments.map(inst => `
+      <div class="mini-installment-item">
+        <span class="mini-installment-date">${formatDate(inst.date)}</span>
+        <span class="mini-installment-number">Pago ${inst.number}/${inst.purchase.mesesSinIntereses}</span>
+        <span class="mini-installment-amount">${money.format(inst.amount)}</span>
+      </div>
+    `).join("");
+
+    // Retornar la etiqueta <details> nativa
+    return `
+      <details class="breakdown-card">
+        <summary class="breakdown-summary">
+          <div class="breakdown-summary-header">
+            <div>
+              <h3 class="breakdown-title">${escapeHtml(group.purchase.nombre)}</h3>
+              <span class="breakdown-card-badge">${escapeHtml(group.card)}</span>
+            </div>
+          </div>
+          <div class="breakdown-stats">
+            <div class="breakdown-stat-item">
+              <span>Deuda Restante</span>
+              <strong>${money.format(group.totalRemaining)}</strong>
+            </div>
+            <div class="breakdown-stat-item" style="text-align: right;">
+              <span>Próx. Pago (${formatDate(nextPayment.date)})</span>
+              <strong class="highlight-amount">${money.format(nextPayment.amount)}</strong>
+            </div>
+          </div>
+        </summary>
+        <div class="breakdown-details-content">
+          <p class="muted" style="margin-top: 0; margin-bottom: 12px; font-size: 0.78rem;">
+            Desglose de las <b>${remainingCount}</b> parcialidades futuras:
+          </p>
+          <div class="mini-installment-list table-scroll">
+            ${installmentsHtml}
+          </div>
+        </div>
+      </details>
+    `;
+  }).join(""); 
+}
+
 function sourceSchedule(source) { return source.tipo === "prestamo" ? `Días ${source.diasPago.join(", ") || "15, 30"}` : `Corte ${source.diaCorte} · Pago ${source.diaLimitePago}`; }
 function renderManagePurchases() { const body = document.querySelector("#manage-table-body"); body.innerHTML = purchases.length ? purchases.map((purchase) => `<tr><td>${escapeHtml(purchase.nombre)}</td><td>${money.format(purchase.montoTotal)}</td><td>${escapeHtml(purchase.tarjeta)}</td><td>${purchase.mensualidadesPagadas}/${purchase.mesesSinIntereses}</td><td class="action-cell"><button class="action-button" data-action="edit" data-id="${purchase.id}" type="button">Editar</button><button class="action-button danger-button" data-action="delete" data-id="${purchase.id}" type="button">Eliminar</button></td></tr>`).join("") : '<tr><td colspan="5" class="muted">Aún no hay compras registradas.</td></tr>'; }
 function renderManageCards() { const body = document.querySelector("#manage-cards-table-body"); body.innerHTML = cards.map((source) => { const inUse = purchases.some(({ tarjeta }) => tarjeta === source.nombre), cannotDelete = cards.length === 1 && inUse; const tipoLabel = source.tipo === "prestamo" ? "Préstamo personal" : (source.tipo === "departamental" ? "Departamental" : "Tarjeta de crédito"); return `<tr><td>${escapeHtml(source.nombre)}</td><td>${tipoLabel}</td><td>${sourceSchedule(source)}</td><td class="action-cell"><button class="action-button" data-source-action="edit" data-source-name="${escapeHtml(source.nombre)}" type="button">Editar</button><button class="action-button danger-button" data-source-action="delete" data-source-name="${escapeHtml(source.nombre)}" type="button" ${cannotDelete ? "disabled" : ""}>Eliminar</button></td></tr>`; }).join(""); }
@@ -359,15 +435,13 @@ function openPurchaseModal(purchase = null) {
     document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
     if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
     
-    // Si posteriormente guardas la frecuencia en Firestore, asígnala aquí.
     if (frequencySelect) frequencySelect.value = purchase.frecuenciaPago || "mensual";
   } else {
     document.querySelector("#fechaPrimerPago").value = getDefaultFirstPaymentDate(startOfToday());
-    // Restaurar valor por defecto para nuevas compras
     if (frequencySelect) frequencySelect.value = "mensual";
   }
 
-  // Disparamos el evento para que las etiquetas se sincronicen correctamente
+  // Disparamos el evento para sincronizar dinámicamente las etiquetas
   if (frequencySelect) frequencySelect.dispatchEvent(new Event("change"));
 
   purchaseModal.classList.add("is-open"); 
