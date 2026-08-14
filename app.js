@@ -63,7 +63,7 @@ const INITIAL_CARDS = [
   new FuenteFinanciamiento("SEARS", 15, 5, "departamental")
 ];
 
-// Compras históricas personales
+// Compras históricas personales (para tu cuenta)
 const HISTORICAL_PURCHASES = [
   { compra: "LIVERPOOL PANTALLA", monto: 387 },
   { compra: "COLCHON SEARS", monto: 354 },
@@ -83,7 +83,7 @@ const HISTORICAL_PURCHASES = [
 let cards = [];
 let purchases = [];
 
-// Función para guardar en el espacio del usuario en Firestore
+// Función para guardar en el espacio del usuario actual en Firestore
 async function saveToCloud() {
   if (!userDocRef) return;
   const timestamp = new Date().toISOString();
@@ -328,13 +328,25 @@ const logoutButton = document.querySelector("#logout-button");
 
 let isRegisterMode = false;
 
-function getAuthErrorMessage(code) {
+function getAuthErrorMessage(err) {
+  const code = err.code || "";
   switch (code) {
-    case "auth/invalid-email": return "El correo no es válido.";
-    case "auth/user-not-found": case "auth/wrong-password": case "auth/invalid-credential": return "Correo o contraseña incorrectos.";
-    case "auth/email-already-in-use": return "Ya existe una cuenta con este correo.";
-    case "auth/weak-password": return "La contraseña debe tener mínimo 6 caracteres.";
-    default: return "Error al autenticar. Verifica tus datos.";
+    case "auth/invalid-email": 
+      return "El formato de correo no es válido.";
+    case "auth/user-not-found": 
+    case "auth/wrong-password": 
+    case "auth/invalid-credential": 
+      return "Correo o contraseña incorrectos.";
+    case "auth/email-already-in-use": 
+      return "Ya existe una cuenta con este correo. Cambia a Iniciar sesión.";
+    case "auth/weak-password": 
+      return "La contraseña debe tener mínimo 6 caracteres.";
+    case "auth/unauthorized-domain": 
+      return "Dominio no autorizado en Firebase. Agrega diazmfernando96-boop.github.io en Firebase Console > Authentication > Settings.";
+    case "auth/operation-not-allowed":
+      return "El proveedor de correo no está habilitado en Firebase Console.";
+    default: 
+      return `Error (${code}): ${err.message || "Verifica tus datos."}`;
   }
 }
 
@@ -351,6 +363,8 @@ authForm.addEventListener("submit", async (e) => {
   const email = document.querySelector("#auth-email").value.trim();
   const password = document.querySelector("#auth-password").value;
   authError.textContent = "";
+  authSubmit.disabled = true;
+  authSubmit.textContent = "Procesando...";
 
   try {
     if (isRegisterMode) {
@@ -359,7 +373,10 @@ authForm.addEventListener("submit", async (e) => {
       await auth.signInWithEmailAndPassword(email, password);
     }
   } catch (err) {
-    authError.textContent = getAuthErrorMessage(err.code);
+    authError.textContent = getAuthErrorMessage(err);
+  } finally {
+    authSubmit.disabled = false;
+    authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
   }
 });
 
@@ -429,7 +446,7 @@ auth.onAuthStateChanged((user) => {
   }
 });
 
-// Desinstalar cualquier Service Worker para evitar bloqueos
+// Desinstalar cualquier Service Worker para evitar bloqueos de red
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {
     for (const registration of registrations) {
