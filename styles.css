@@ -252,3 +252,145 @@ input[type="number"]::-webkit-outer-spin-button {
 input[type="number"] {
   -moz-appearance: textfield; 
 }
+
+/* ===================================================
+   ESTILOS PARA EL DESGLOSE EN TARJETAS EXPANDIBLES
+   =================================================== */
+.breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.breakdown-card {
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 5%);
+  backdrop-filter: blur(18px);
+  overflow: hidden;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.breakdown-card:hover {
+  border-color: rgb(139 92 246 / 40%);
+  background: rgb(255 255 255 / 8%);
+}
+
+/* El encabezado clickeable de la tarjeta */
+.breakdown-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  cursor: pointer;
+  list-style: none; /* Elimina la flecha predeterminada */
+  position: relative;
+  outline: none;
+}
+
+/* Ocultar la flecha nativa en Webkit (Chrome/Safari) */
+.breakdown-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Flecha personalizada a la derecha */
+.breakdown-summary::after {
+  content: '▼';
+  position: absolute;
+  right: 18px;
+  top: 22px;
+  color: #8b8fa8;
+  font-size: 0.8rem;
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+details[open] .breakdown-summary::after {
+  transform: rotate(180deg);
+  color: #a78bfa; /* Se pinta de morado al abrir */
+}
+
+.breakdown-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-right: 20px; 
+}
+
+.breakdown-title {
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.breakdown-card-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgb(139 92 246 / 20%);
+  color: #c9bbff;
+  margin-top: 6px;
+}
+
+.breakdown-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.breakdown-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.breakdown-stat-item span { 
+  color: #8b8fa8; 
+  font-size: 0.7rem; 
+  text-transform: uppercase; 
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.breakdown-stat-item strong { 
+  color: #fff; 
+  font-size: 1.05rem; 
+}
+.breakdown-stat-item .highlight-amount {
+  color: #56e6ac; /* Verde para el próximo pago */
+}
+
+/* El contenido desplegable */
+.breakdown-details-content {
+  padding: 0 18px 18px;
+  border-top: 1px solid rgb(255 255 255 / 6%);
+  margin-top: 4px;
+  padding-top: 16px;
+}
+
+.mini-installment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px; /* Limita la altura para que no desborde la pantalla */
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.mini-installment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgb(0 0 0 / 25%);
+  border: 1px solid rgb(255 255 255 / 4%);
+  border-radius: 12px;
+}
+
+.mini-installment-date { color: #aab8d8; font-weight: 700; font-size: 0.85rem; width: 75px; }
+.mini-installment-number { color: #858ba2; font-size: 0.75rem; text-align: center; flex: 1; }
+.mini-installment-amount { color: #fff; font-weight: 800; font-size: 0.9rem; text-align: right; width: 85px; }
