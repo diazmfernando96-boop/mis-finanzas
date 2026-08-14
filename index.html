@@ -251,13 +251,14 @@
             <select id="purchase-card" name="tarjeta" required></select>
           </label>
           
+          <!-- AQUÍ ESTÁ LA MODIFICACIÓN: SELECT cambiados a INPUT NUMBER -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <label><span id="label-total-installments">Meses totales</span>
-              <select id="purchase-months" name="meses" required></select>
+              <input type="number" id="purchase-months" name="meses" min="1" placeholder="Ej. 12" required />
             </label>
 
             <label><span id="label-paid-installments">Meses ya pagados</span>
-              <select id="purchase-paid-months" name="mensualidadesPagadas" required></select>
+              <input type="number" id="purchase-paid-months" name="mensualidadesPagadas" min="0" placeholder="Ej. 0" required />
             </label>
           </div>
 
