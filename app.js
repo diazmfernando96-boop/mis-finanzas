@@ -13,7 +13,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-// Compatibilidad móvil
+// Compatibilidad con redes móviles
 db.settings({
   experimentalAutoDetectLongPolling: true,
   merge: true
@@ -348,7 +348,7 @@ function renderTotalsAndAlert(payments, total) { document.querySelector("#global
 function render() {
   const today = startOfToday(), payments = allPayments(), total = purchases.reduce((sum, purchase) => sum + remainingBalance(purchase), 0), next = [...payments].sort((a, b) => a.date - b.date)[0];
   
-  // 1. Cobro exclusivo de la quincena del 15 para Dashboard
+  // 1. Cobro de la quincena del 15 en Dashboard
   const payments15 = payments.filter(p => isPaymentInFortnight15(p.date, today));
   const totalFortnight15 = payments15.reduce((sum, p) => sum + p.amount, 0);
 
@@ -397,12 +397,12 @@ function render() {
     const isQ = purchase.frecuenciaPago === "quincenal";
     const label = isQ ? "QNA" : "MSI";
     return `<tr><td>${escapeHtml(purchase.nombre)}</td><td>${escapeHtml(purchase.tarjeta)}</td><td>${first ? money.format(first.amount) : money.format(0)} / ${purchase.mesesSinIntereses} ${label}</td><td>${first ? formatDate(first.date) : "Finalizado"}</td></tr>`; 
-  }).join("") : '<tr><td colspan="4" class="muted">Aún no hay compras registradas.</td></tr>';
+  }).join("") : '<tr><td colspan="4" class="muted">Aún no hay compras registradas.</td></tr>'; 
   
   const cardOptions = cards.filter(({ tipo }) => tipo === "tarjeta").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const loanOptions = cards.filter(({ tipo }) => tipo === "prestamo").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
   const deptOptions = cards.filter(({ tipo }) => tipo === "departamental").map(({ nombre }) => `<option value="${escapeHtml(nombre)}">${escapeHtml(nombre)}</option>`).join("");
-  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito">${cardOptions}</optgroup>` : ""}${loanOptions ? `<optgroup label="Préstamos Personales">${loanOptions}</optgroup>` : ""}${deptOptions ? `<optgroup label="Departamentales">${deptOptions}</optgroup>` : ""}`;
+  document.querySelector("#purchase-card").innerHTML = `${cardOptions ? `<optgroup label="Tarjetas de Crédito">${cardOptions}</optgroup>` : ""}${loanOptions ? `<optgroup label="Préstamos Personales">${loanOptions}</optgroup>` : ""}${deptOptions ? `<optgroup label="Departamentales">${deptOptions}</optgroup>` : ""}`; 
   
   renderBreakdown(payments); 
   renderManagePurchases(); 
@@ -424,6 +424,8 @@ function updateInstallmentOptions(frequency, selectedMonths = 1, selectedPaid = 
   const labelTotal = document.querySelector("#label-total-installments");
   const labelPaid = document.querySelector("#label-paid-installments");
   
+  if (!monthsSelect || !paidSelect) return;
+
   const isQuincenal = frequency === "quincenal";
   if (labelTotal) labelTotal.textContent = isQuincenal ? "Quincenas totales" : "Meses totales";
   if (labelPaid) labelPaid.textContent = isQuincenal ? "Quincenas ya pagadas" : "Meses ya pagados";
@@ -442,19 +444,26 @@ function updateInstallmentOptions(frequency, selectedMonths = 1, selectedPaid = 
   ).join("");
 }
 
-document.querySelector("#purchase-frequency").addEventListener("change", (e) => {
-  updateInstallmentOptions(e.target.value);
-});
+const purchaseFreqEl = document.querySelector("#purchase-frequency");
+if (purchaseFreqEl) {
+  purchaseFreqEl.addEventListener("change", (e) => {
+    updateInstallmentOptions(e.target.value);
+  });
+}
 
-document.querySelector("#purchase-months").addEventListener("change", (e) => {
-  const maxTotal = Number(e.target.value) || 1;
-  const paidSelect = document.querySelector("#purchase-paid-months");
-  const currentPaid = Math.min(Number(paidSelect.value) || 0, maxTotal - 1);
-  const isQuincenal = document.querySelector("#purchase-frequency").value === "quincenal";
-  paidSelect.innerHTML = Array.from({ length: maxTotal }, (_, i) => 
-    `<option value="${i}" ${i === currentPaid ? "selected" : ""}>${i} ${isQuincenal ? "pagadas" : "pagados"}</option>`
-  ).join("");
-});
+const purchaseMonthsEl = document.querySelector("#purchase-months");
+if (purchaseMonthsEl) {
+  purchaseMonthsEl.addEventListener("change", (e) => {
+    const maxTotal = Number(e.target.value) || 1;
+    const paidSelect = document.querySelector("#purchase-paid-months");
+    if (!paidSelect) return;
+    const currentPaid = Math.min(Number(paidSelect.value) || 0, maxTotal - 1);
+    const isQuincenal = purchaseFreqEl ? purchaseFreqEl.value === "quincenal" : false;
+    paidSelect.innerHTML = Array.from({ length: maxTotal }, (_, i) => 
+      `<option value="${i}" ${i === currentPaid ? "selected" : ""}>${i} ${isQuincenal ? "pagadas" : "pagados"}</option>`
+    ).join("");
+  });
+}
 
 function closePurchaseModal() { purchaseModal.classList.remove("is-open"); purchaseModal.setAttribute("aria-hidden", "true"); editingPurchaseId = null; }
 function openPurchaseModal(purchase = null) { 
@@ -464,7 +473,7 @@ function openPurchaseModal(purchase = null) {
   document.querySelector("#save-purchase").textContent = purchase ? "Guardar cambios" : "Guardar compra"; 
   
   const frequency = purchase?.frecuenciaPago || "mensual";
-  document.querySelector("#purchase-frequency").value = frequency;
+  if (purchaseFreqEl) purchaseFreqEl.value = frequency;
   updateInstallmentOptions(frequency, purchase?.mesesSinIntereses || 1, purchase?.mensualidadesPagadas || 0);
 
   if (purchase) { 
@@ -621,8 +630,8 @@ sourceForm.addEventListener("submit", (event) => {
     if (index >= 0) {
       const nameCollision = cards.some((c, i) => i !== index && c.nombre.toLowerCase() === newName.toLowerCase());
       if (nameCollision) {
-        error.textContent = "Ya existe otra fuente con ese nombre.";
-        return;
+        error.textContent = "Ya existe otra fuente con ese nombre."; 
+        return; 
       }
 
       cards[index] = new FuenteFinanciamiento(newName, cutoff || 15, due || 15, type, days); 
