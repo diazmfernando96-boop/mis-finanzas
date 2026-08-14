@@ -135,15 +135,18 @@
       </div>
       </section>
 
-      <!-- VISTA 2: DESGLOSE DE PAGOS -->
+      <!-- VISTA 2: DESGLOSE DE PAGOS (AHORA CON TARJETAS EXPANDIBLES) -->
       <section class="view" id="breakdown-view" role="tabpanel" aria-labelledby="tab-breakdown" hidden>
-        <article class="panel breakdown-panel">
-          <div class="panel-heading"><div><p class="panel-label">Cronograma de amortización</p><h2>Desglose de pagos</h2></div><span class="muted">Parcialidades futuras ordenadas por fecha</span></div>
-          <div class="table-scroll"><table class="breakdown-table">
-            <thead><tr><th>Fecha exacta de pago</th><th>Concepto</th><th>Tarjeta</th><th>Parcialidad</th><th>Monto del pago</th></tr></thead>
-            <tbody id="breakdown-table-body"></tbody>
-          </table></div>
-        </article>
+        <div class="panel-heading" style="margin-bottom: 20px;">
+          <div>
+            <p class="panel-label">Cronograma de amortización</p>
+            <h2>Desglose por compras</h2>
+          </div>
+          <span class="muted">Haz clic en una compra para ver sus parcialidades futuras</span>
+        </div>
+        
+        <!-- Contenedor dinámico de las tarjetas expansibles -->
+        <div id="breakdown-cards-container" class="breakdown-grid"></div>
       </section>
 
       <!-- VISTA 3: PANTALLA DE SUELDO -->
@@ -226,7 +229,7 @@
       <button class="tab" id="tab-manage" role="tab" aria-selected="false" aria-controls="manage-view" data-view="manage-view" type="button"><span class="nav-icon">▦</span><span>Administrar</span></button>
     </nav>
     
-    <!-- Modal Registrar / Editar Compra (Con Selector Quincenal / Mensual) -->
+    <!-- Modal Registrar / Editar Compra -->
     <div class="modal" id="purchase-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-card">
         <div class="modal-header"><h2 id="modal-title">Registrar compra</h2><button class="close-button" id="close-purchase-modal" type="button" aria-label="Cerrar">×</button></div>
@@ -251,7 +254,6 @@
             <select id="purchase-card" name="tarjeta" required></select>
           </label>
           
-          <!-- INPUTS NUMBER con ids de las etiquetas -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <label><span id="label-total-installments">Meses totales</span>
               <input type="number" id="purchase-months" name="meses" min="1" placeholder="Ej. 12" required />
