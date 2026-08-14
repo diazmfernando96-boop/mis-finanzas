@@ -4,19 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="Dashboard de finanzas personales." />
+    <meta name="theme-color" content="#09090e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Finanzas personales | Dashboard</title>
-    <link rel="stylesheet" href="styles.css?v=5" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="styles.css?v=3" />
   </head>
   <body>
     <div id="pokemon-layer" aria-hidden="true"></div>
-    <main class="app-layout">
+
+    <!-- Pantalla de Autenticación -->
+    <div id="auth-screen" class="modal is-open" style="z-index: 100; opacity: 1; pointer-events: auto;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 id="auth-title">Iniciar sesión</h2>
+        </div>
+        <form id="auth-form">
+          <label>Correo electrónico
+            <input id="auth-email" type="email" required placeholder="correo@ejemplo.com" />
+          </label>
+          <label>Contraseña
+            <input id="auth-password" type="password" required minlength="6" placeholder="Mínimo 6 caracteres" />
+          </label>
+          <p class="form-error" id="auth-error" aria-live="polite"></p>
+          <div class="modal-actions" style="justify-content: space-between; align-items: center;">
+            <button class="text-button" id="toggle-auth-mode" type="button">¿No tienes cuenta? Regístrate</button>
+            <button class="primary-button" id="auth-submit" type="submit">Entrar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <main class="app-layout" id="main-app" style="display: none;">
       <div class="dashboard-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Resumen financiero</p>
+          <p class="eyebrow" id="user-display">Resumen financiero</p>
           <h1>Mi Dashboard</h1>
         </div>
-        <button class="primary-button" id="open-purchase-modal" type="button">+ Registrar compra</button>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="text-button" id="logout-button" type="button" style="color: #fca5a5;">Cerrar sesión</button>
+          <button class="primary-button" id="open-purchase-modal" type="button">+ Registrar compra</button>
+        </div>
       </header>
 
       <section class="view" id="dashboard-view" role="tabpanel" aria-labelledby="tab-dashboard">
@@ -118,7 +148,7 @@
       </div>
     </main>
 
-    <nav class="bottom-nav" role="tablist" aria-label="Navegación principal">
+    <nav class="bottom-nav" id="bottom-nav" role="tablist" aria-label="Navegación principal" style="display: none;">
       <button class="tab is-active" id="tab-dashboard" role="tab" aria-selected="true" aria-controls="dashboard-view" data-view="dashboard-view" type="button"><span class="nav-icon">◉</span><span>Dashboard</span></button>
       <button class="tab" id="tab-breakdown" role="tab" aria-selected="false" aria-controls="breakdown-view" data-view="breakdown-view" type="button"><span class="nav-icon">⌁</span><span>Desglose</span></button>
       <button class="tab" id="tab-manage" role="tab" aria-selected="false" aria-controls="manage-view" data-view="manage-view" type="button"><span class="nav-icon">▦</span><span>Administrar</span></button>
@@ -184,14 +214,15 @@
       </div>
     </div>
     
-    <!-- SDK de Firebase -->
+    <!-- SDK de Firebase (App, Firestore y Auth) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
-    <!-- Librería de Gráficas -->
+    <!-- Librería de Gráficas Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- Script de la aplicación -->
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=3"></script>
   </body>
 </html>
