@@ -11,7 +11,11 @@ const firebaseConfig = {
 // 2. Inicializar Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const docRef = db.collection("finanzas").doc("mi_dashboard");
+const auth = firebase.auth();
+
+let currentUser = null;
+let userDocRef = null;
+let unsubscribeFirestore = null;
 
 const STORAGE_KEYS = { cards: "finanzas.tarjetas", purchases: "finanzas.compras", updatedAt: "finanzas.ultimaActualizacion" };
 const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
@@ -25,7 +29,6 @@ class FuenteFinanciamiento {
     Object.assign(this, { nombre, diaCorte, diaLimitePago, tipo, diasPago: normalizePaymentDays(diasPago) });
   }
 }
-
 class Compra {
   constructor({ id = crypto.randomUUID(), nombre, montoTotal, saldoRestante = montoTotal, tarjeta, mesesSinIntereses, mensualidadesPagadas = 0, fechaPrimerPago = null, fechaCompra = new Date().toISOString() }) {
     if (!tarjeta || !Number.isFinite(montoTotal) || !Number.isInteger(mesesSinIntereses) || mesesSinIntereses < 1) throw new Error("Datos de compra inválidos.");
@@ -33,44 +36,23 @@ class Compra {
   }
 }
 
-function normalizePaymentDays(days) { 
-  return [...new Set((Array.isArray(days) ? days : String(days).split(",")).map(Number).filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))].sort((a, b) => a - b); 
-}
-
+function normalizePaymentDays(days) { return [...new Set((Array.isArray(days) ? days : String(days).split(",")).map(Number).filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))].sort((a, b) => a - b); }
 const readStorage = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return Array.isArray(value) ? value : fallback; } catch { return fallback; } };
 const writeStorage = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 
-// Fuentes por defecto disponibles en el sistema
-const DEFAULT_CARDS = [
-  new FuenteFinanciamiento("BBVA ORO", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("BBVA AZUL", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("DIDI CARD", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("MP TDC", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("NU TDC", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento('PROMODA "BRADESCARD"', 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("PLATA CARD", 15, 5, "tarjeta"),
-  new FuenteFinanciamiento("MP Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("DIDI Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("NU Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("Liverpool Prestamos", 15, 15, "prestamo", [15, 30]),
-  new FuenteFinanciamiento("LIVERPOOL", 15, 5, "departamental"),
-  new FuenteFinanciamiento("PALACIO DE HIERRO", 15, 5, "departamental"),
-  new FuenteFinanciamiento("SANBORNS", 15, 5, "departamental"),
-  new FuenteFinanciamiento("SEARS", 15, 5, "departamental")
-];
+let cards = [];
+let purchases = [];
 
-let cards = readStorage(STORAGE_KEYS.cards, DEFAULT_CARDS).map(c => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago));
-let purchases = readStorage(STORAGE_KEYS.purchases, []).map((data) => new Compra(data));
-
-// Guardar en LocalStorage y Firestore en la nube
+// Función para guardar en el espacio del usuario actual
 async function saveToCloud() {
+  if (!userDocRef) return;
   const timestamp = new Date().toISOString();
   localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
   localStorage.setItem(STORAGE_KEYS.purchases, JSON.stringify(purchases));
   localStorage.setItem(STORAGE_KEYS.updatedAt, timestamp);
 
   try {
-    await docRef.set({
+    await userDocRef.set({
       cards: cards.map(c => ({ ...c })),
       purchases: purchases.map(p => ({ ...p })),
       updatedAt: timestamp
@@ -93,13 +75,11 @@ function nextPaymentDate(days, from) {
   for (let offset = 0; offset < 15; offset += 1) for (const day of normalized) { const candidate = createDate(base.getFullYear(), base.getMonth() + offset, day); if (candidate >= base) return candidate; }
   return new Date(base);
 }
-
 function paymentDates(source, count, today) {
   if (!count) return [];
   if (source.tipo === "prestamo") { const days = source.diasPago.length ? source.diasPago : [15, 30]; const dates = []; let cursor = today; for (let index = 0; index < count; index += 1) { const date = nextPaymentDate(days, cursor); dates.push(date); cursor = new Date(date); cursor.setDate(cursor.getDate() + 1); } return dates; }
   const day = standardPaymentDay(source.diaCorte); const first = createDate(today.getFullYear(), today.getMonth(), day); if (first < today) first.setMonth(first.getMonth() + 1); return Array.from({ length: count }, (_, index) => createDate(first.getFullYear(), first.getMonth() + index, day));
 }
-
 function projectPayments(purchase) {
   const source = sourceFor(purchase); if (!source) return [];
   const totalCents = Math.round(purchase.montoTotal * 100), baseCents = Math.floor(totalCents / purchase.mesesSinIntereses), paid = purchase.mensualidadesPagadas;
@@ -107,7 +87,6 @@ function projectPayments(purchase) {
   const dates = purchase.fechaPrimerPago ? remainingNumbers.map((_, index) => { const first = parseLocalDate(purchase.fechaPrimerPago); return createDate(first.getFullYear(), first.getMonth() + paid + index, first.getDate()); }) : paymentDates(source, remainingNumbers.length, startOfToday());
   return remainingNumbers.map((number, index) => ({ number, amount: (baseCents + (number === purchase.mesesSinIntereses ? totalCents - baseCents * purchase.mesesSinIntereses : 0)) / 100, date: dates[index], card: source.nombre }));
 }
-
 const remainingBalance = (purchase) => projectPayments(purchase).reduce((sum, payment) => sum + payment.amount, 0);
 const escapeHtml = (value) => String(value).replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]);
 const formatDate = (date) => dateFormatter.format(date).toUpperCase();
@@ -194,4 +173,166 @@ function openPurchaseModal(purchase = null) {
     document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
     if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
   } 
-  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "
+  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "false"); document.querySelector("#purchase-name").focus(); 
+}
+function closeSourceModal() { sourceModal.classList.remove("is-open"); sourceModal.setAttribute("aria-hidden", "true"); editingSourceName = null; }
+function toggleSourceFields() { const loan = document.querySelector("#source-type").value === "prestamo"; document.querySelector("#credit-fields").hidden = loan; document.querySelector("#loan-fields").hidden = !loan; document.querySelector("#card-cutoff").required = !loan; document.querySelector("#card-due").required = !loan; document.querySelector("#loan-payment-days").required = loan; }
+function openSourceModal(source = null) { editingSourceName = source?.nombre ?? null; sourceForm.reset(); document.querySelector("#card-modal-title").textContent = source ? "Editar fuente" : "Registrar fuente"; document.querySelector("#save-card").textContent = source ? "Guardar cambios" : "Guardar fuente"; document.querySelector("#card-name").disabled = Boolean(source); if (source) { document.querySelector("#card-name").value = source.nombre; document.querySelector("#source-type").value = source.tipo; document.querySelector("#card-cutoff").value = source.diaCorte; document.querySelector("#card-due").value = source.diaLimitePago; document.querySelector("#loan-payment-days").value = source.diasPago.join(", "); } toggleSourceFields(); sourceModal.classList.add("is-open"); sourceModal.setAttribute("aria-hidden", "false"); document.querySelector(source ? "#source-type" : "#card-name").focus(); }
+
+document.querySelector("#open-purchase-modal").addEventListener("click", () => openPurchaseModal()); document.querySelector("#manage-add-purchase").addEventListener("click", () => openPurchaseModal()); document.querySelector("#close-purchase-modal").addEventListener("click", closePurchaseModal); document.querySelector("#cancel-purchase").addEventListener("click", closePurchaseModal); purchaseModal.addEventListener("click", (event) => { if (event.target === purchaseModal) closePurchaseModal(); });
+document.querySelector("#open-card-modal").addEventListener("click", () => openSourceModal()); document.querySelector("#close-card-modal").addEventListener("click", closeSourceModal); document.querySelector("#cancel-card").addEventListener("click", closeSourceModal); sourceModal.addEventListener("click", (event) => { if (event.target === sourceModal) closeSourceModal(); }); document.querySelector("#source-type").addEventListener("change", toggleSourceFields);
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closePurchaseModal(); closeSourceModal(); } }); document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => { document.querySelectorAll(".tab").forEach((item) => { const active = item === tab; item.classList.toggle("is-active", active); item.setAttribute("aria-selected", active); }); document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== tab.dataset.view; }); }));
+
+document.querySelector("#manage-table-body").addEventListener("click", (event) => { 
+  const button = event.target.closest("button[data-action]"); 
+  if (!button) return; 
+  const index = purchases.findIndex(({ id }) => id === button.dataset.id); 
+  if (index < 0) return; 
+  if (button.dataset.action === "edit") openPurchaseModal(purchases[index]); 
+  if (button.dataset.action === "delete" && window.confirm(`¿Eliminar “${purchases[index].nombre}”?`)) { 
+    purchases.splice(index, 1); 
+    saveToCloud(); 
+    render(); 
+  } 
+});
+
+purchaseForm.addEventListener("submit", (event) => { 
+  event.preventDefault(); 
+  const data = new FormData(purchaseForm), amount = Number(data.get("monto")), months = Number(data.get("meses")), paid = Number(data.get("mensualidadesPagadas")), fechaPrimerPago = data.get("fechaPrimerPago"), error = document.querySelector("#form-error"); 
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(months) || months < 1 || !Number.isInteger(paid) || paid < 0 || paid > months) { error.textContent = "Revisa el monto y las mensualidades pagadas."; return; } 
+  const changes = { nombre: data.get("nombre").trim(), montoTotal: amount, tarjeta: data.get("tarjeta"), mesesSinIntereses: months, mensualidadesPagadas: paid, fechaPrimerPago: fechaPrimerPago }; 
+  const index = purchases.findIndex(({ id }) => id === editingPurchaseId); 
+  if (index >= 0) purchases[index] = new Compra({ ...purchases[index], ...changes, saldoRestante: amount }); else purchases.push(new Compra(changes)); 
+  saveToCloud(); 
+  error.textContent = ""; 
+  closePurchaseModal(); 
+  render(); 
+});
+
+document.querySelector("#manage-cards-table-body").addEventListener("click", (event) => { 
+  const button = event.target.closest("button[data-source-action]"); 
+  if (!button || button.disabled) return; 
+  const index = cards.findIndex(({ nombre }) => nombre === button.dataset.sourceName); 
+  if (index < 0) return; 
+  if (button.dataset.sourceAction === "edit") openSourceModal(cards[index]); 
+  if (button.dataset.sourceAction === "delete") { 
+    const replacement = cards.find((_, current) => current !== index); 
+    if (!replacement && purchases.some(({ tarjeta }) => tarjeta === cards[index].nombre)) return; 
+    if (replacement) { 
+      purchases = purchases.map((purchase) => purchase.tarjeta === cards[index].nombre ? new Compra({ ...purchase, tarjeta: replacement.nombre }) : purchase); 
+    } 
+    cards.splice(index, 1); 
+    saveToCloud(); 
+    render(); 
+  } 
+});
+
+sourceForm.addEventListener("submit", (event) => { 
+  event.preventDefault(); 
+  const data = new FormData(sourceForm), name = editingSourceName ?? data.get("nombre").trim(), type = data.get("tipo"), cutoff = Number(data.get("corte")), due = Number(data.get("limite")), days = normalizePaymentDays(data.get("diasPago")), error = document.querySelector("#card-form-error"); 
+  if (!name || ((type === "tarjeta" || type === "departamental") && (!Number.isInteger(cutoff) || cutoff < 1 || cutoff > 31 || !Number.isInteger(due) || due < 1 || due > 31)) || (type === "prestamo" && !days.length)) { error.textContent = "Completa los datos de la fuente correctamente."; return; } 
+  const index = cards.findIndex(({ nombre }) => nombre === editingSourceName); 
+  if (index >= 0) cards[index] = new FuenteFinanciamiento(editingSourceName, cutoff || 15, due || 15, type, days); else if (cards.some((source) => source.nombre.toLocaleLowerCase() === name.toLocaleLowerCase())) { error.textContent = "Ya existe una fuente con ese nombre."; return; } else cards.push(new FuenteFinanciamiento(name, cutoff || 15, due || 15, type, days)); 
+  saveToCloud(); 
+  error.textContent = ""; 
+  closeSourceModal(); 
+  render(); 
+});
+
+// --- Lógica de Autenticación de Usuarios ---
+const authScreen = document.querySelector("#auth-screen");
+const mainApp = document.querySelector("#main-app");
+const bottomNav = document.querySelector("#bottom-nav");
+const authForm = document.querySelector("#auth-form");
+const authTitle = document.querySelector("#auth-title");
+const authSubmit = document.querySelector("#auth-submit");
+const toggleAuthMode = document.querySelector("#toggle-auth-mode");
+const authError = document.querySelector("#auth-error");
+const userDisplay = document.querySelector("#user-display");
+const logoutButton = document.querySelector("#logout-button");
+
+let isRegisterMode = false;
+
+toggleAuthMode.addEventListener("click", () => {
+  isRegisterMode = !isRegisterMode;
+  authTitle.textContent = isRegisterMode ? "Crear cuenta" : "Iniciar sesión";
+  authSubmit.textContent = isRegisterMode ? "Registrarme" : "Entrar";
+  toggleAuthMode.textContent = isRegisterMode ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate";
+  authError.textContent = "";
+});
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = document.querySelector("#auth-email").value.trim();
+  const password = document.querySelector("#auth-password").value;
+  authError.textContent = "";
+
+  try {
+    if (isRegisterMode) {
+      await auth.createUserWithEmailAndPassword(email, password);
+    } else {
+      await auth.signInWithEmailAndPassword(email, password);
+    }
+  } catch (err) {
+    authError.textContent = err.message || "Error al autenticar. Verifica tus datos.";
+  }
+});
+
+logoutButton.addEventListener("click", () => {
+  auth.signOut();
+});
+
+// Escuchar cambios de sesión de usuario
+auth.onAuthStateChanged((user) => {
+  if (unsubscribeFirestore) {
+    unsubscribeFirestore();
+    unsubscribeFirestore = null;
+  }
+
+  if (user) {
+    currentUser = user;
+    userDocRef = db.collection("users").doc(user.uid);
+    authScreen.style.display = "none";
+    mainApp.style.display = "block";
+    bottomNav.style.display = "flex";
+    userDisplay.textContent = user.email || "Mi cuenta";
+
+    // Escucha en tiempo real de la base de datos exclusiva del usuario
+    unsubscribeFirestore = userDocRef.onSnapshot((snapshot) => {
+      if (snapshot.exists) {
+        const data = snapshot.data();
+        cards = Array.isArray(data.cards) ? data.cards.map((c) => new FuenteFinanciamiento(c.nombre, c.diaCorte, c.diaLimitePago, c.tipo, c.diasPago)) : [];
+        purchases = Array.isArray(data.purchases) ? data.purchases.map((d) => new Compra(d)) : [];
+        if (data.updatedAt) localStorage.setItem(STORAGE_KEYS.updatedAt, data.updatedAt);
+        render();
+      } else {
+        // Base de datos en blanco para usuario nuevo
+        cards = [];
+        purchases = [];
+        saveToCloud();
+        render();
+      }
+    }, (error) => {
+      console.error("Error en Firestore:", error);
+    });
+
+  } else {
+    currentUser = null;
+    userDocRef = null;
+    cards = [];
+    purchases = [];
+    authScreen.style.display = "grid";
+    mainApp.style.display = "none";
+    bottomNav.style.display = "none";
+  }
+});
+
+// Registrar Service Worker para PWA (App Móvil)
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((err) => console.log("SW error:", err));
+  });
+}
+
+renderPokemonEasterEgg(); 
+setInterval(renderPokemonEasterEgg, 30000);
