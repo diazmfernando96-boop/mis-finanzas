@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Finanzas personales | Dashboard</title>
     <link rel="manifest" href="manifest.json" />
-    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=12" />
   </head>
   <body>
     <div id="pokemon-layer" aria-hidden="true"></div>
@@ -84,7 +84,7 @@
         </article>
 
         <article class="panel">
-          <p class="panel-label">Compras a MSI</p>
+          <p class="panel-label">Compras activas</p>
           <p class="amount" id="msi-count">0</p>
           <span class="muted" id="financed-total">$0.00 financiados</span>
         </article>
@@ -110,12 +110,12 @@
 
         <article class="panel wide-panel purchases-panel">
           <div class="panel-heading">
-            <div><p class="panel-label">Compras</p><h2>Mensualidades activas</h2></div>
+            <div><p class="panel-label">Compras</p><h2>Plazos y Mensualidades activas</h2></div>
             <button class="text-button" type="button">Ver compras</button>
           </div>
           <div class="table-scroll">
             <table>
-              <thead><tr><th>Compra</th><th>Tarjeta</th><th>Mensualidad</th><th>Próximo pago</th></tr></thead>
+              <thead><tr><th>Compra</th><th>Tarjeta</th><th>Cuota / Plazo</th><th>Próximo pago</th></tr></thead>
               <tbody id="purchases-table-body"></tbody>
             </table>
           </div>
@@ -142,10 +142,9 @@
         </article>
       </section>
 
-      <!-- VISTA 3: NUEVA PANTALLA DE SUELDO Y FLUJO QUINCENAL -->
+      <!-- VISTA 3: PANTALLA DE SUELDO -->
       <section class="view" id="salary-view" role="tabpanel" aria-labelledby="tab-salary" hidden>
         <div class="dashboard-grid" style="margin-bottom: 20px;">
-          <!-- Panel de Configuración de Sueldo -->
           <article class="panel wide-panel" style="background: #161622;">
             <div class="panel-heading">
               <div><p class="panel-label">Configuración de ingresos</p><h2>Control de Sueldo Quincenal</h2></div>
@@ -163,7 +162,6 @@
             </form>
           </article>
 
-          <!-- Indicadores de Liquidez de la Quincena -->
           <article class="panel balance-panel">
             <p class="panel-label">Ingreso de esta quincena</p>
             <p class="amount" id="salary-income-display" style="color: #a78bfa;">$0.00</p>
@@ -183,7 +181,6 @@
           </article>
         </div>
 
-        <!-- Tabla de Pagos de la Quincena en Curso -->
         <article class="panel wide-panel">
           <div class="panel-heading">
             <div><p class="panel-label">Compromisos</p><h2>Pagos que descuenta esta quincena</h2></div>
@@ -202,7 +199,7 @@
         <article class="panel manage-panel">
           <div class="panel-heading"><div><p class="panel-label">Datos guardados</p><h2>Administrar compras</h2></div><button class="primary-button" id="manage-add-purchase" type="button">+ Nueva compra</button></div>
           <div class="table-scroll"><table>
-            <thead><tr><th>Nombre</th><th>Monto</th><th>Tarjeta</th><th>MSI</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Monto</th><th>Tarjeta</th><th>Plazo</th><th>Acciones</th></tr></thead>
             <tbody id="manage-table-body"></tbody>
           </table></div>
         </article>
@@ -217,7 +214,7 @@
       </div>
     </main>
 
-    <!-- Barra de Navegación Inferior (Con la nueva pestaña Sueldo) -->
+    <!-- Barra de Navegación Inferior -->
     <nav class="bottom-nav" id="bottom-nav" role="tablist" aria-label="Navegación principal" style="display: none;">
       <button class="tab is-active" id="tab-dashboard" role="tab" aria-selected="true" aria-controls="dashboard-view" data-view="dashboard-view" type="button"><span class="nav-icon">◉</span><span>Dashboard</span></button>
       <button class="tab" id="tab-breakdown" role="tab" aria-selected="false" aria-controls="breakdown-view" data-view="breakdown-view" type="button"><span class="nav-icon">⌁</span><span>Desglose</span></button>
@@ -225,43 +222,49 @@
       <button class="tab" id="tab-manage" role="tab" aria-selected="false" aria-controls="manage-view" data-view="manage-view" type="button"><span class="nav-icon">▦</span><span>Administrar</span></button>
     </nav>
     
-    <!-- Modal Registrar Compra -->
+    <!-- Modal Registrar / Editar Compra (Con Selector Quincenal / Mensual) -->
     <div class="modal" id="purchase-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-card">
         <div class="modal-header"><h2 id="modal-title">Registrar compra</h2><button class="close-button" id="close-purchase-modal" type="button" aria-label="Cerrar">×</button></div>
         <form id="purchase-form">
-          <label>Nombre de la compra<input id="purchase-name" name="nombre" required maxlength="80" placeholder="Ej. Laptop" /></label>
-          <label>Monto total<input id="purchase-amount" name="monto" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label>
-          <label>Fuente de financiamiento<select id="purchase-card" name="tarjeta" required></select></label>
+          <label>Nombre de la compra
+            <input id="purchase-name" name="nombre" required maxlength="80" placeholder="Ej. Laptop" />
+          </label>
           
-          <label>Meses sin intereses
-            <select id="purchase-months" name="meses" required>
-              <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
-              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
-              <option value="9">9</option><option value="12">12</option><option value="18">18</option>
-              <option value="24">24</option><option value="32">32</option><option value="48">48</option>
-            </select>
-          </label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <label>Monto total
+              <input id="purchase-amount" name="monto" required type="number" min="0.01" step="0.01" placeholder="0.00" />
+            </label>
+            <label>Frecuencia de pago
+              <select id="purchase-frequency" name="frecuenciaPago">
+                <option value="mensual" selected>Mensual</option>
+                <option value="quincenal">Quincenal</option>
+              </select>
+            </label>
+          </div>
 
-          <label>Mensualidades ya pagadas
-            <select id="purchase-paid-months" name="mensualidadesPagadas" required>
-              <option value="0" selected>0</option>
-              <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
-              <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option>
-              <option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option>
-              <option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option>
-              <option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option><option value="25">25</option>
-              <option value="26">26</option><option value="27">27</option><option value="28">28</option><option value="29">29</option><option value="30">30</option>
-              <option value="31">31</option><option value="32">32</option><option value="33">33</option><option value="34">34</option><option value="35">35</option>
-              <option value="36">36</option><option value="37">37</option><option value="38">38</option><option value="39">39</option><option value="40">40</option>
-              <option value="41">41</option><option value="42">42</option><option value="43">43</option><option value="44">44</option><option value="45">45</option>
-              <option value="46">46</option><option value="47">47</option><option value="48">48</option>
-            </select>
+          <label>Fuente de financiamiento
+            <select id="purchase-card" name="tarjeta" required></select>
           </label>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <label><span id="label-total-installments">Meses totales</span>
+              <select id="purchase-months" name="meses" required></select>
+            </label>
 
-          <label>Fecha del primer pago<input id="fechaPrimerPago" name="fechaPrimerPago" required type="date" /></label>
+            <label><span id="label-paid-installments">Meses ya pagados</span>
+              <select id="purchase-paid-months" name="mensualidadesPagadas" required></select>
+            </label>
+          </div>
+
+          <label>Fecha del primer pago
+            <input id="fechaPrimerPago" name="fechaPrimerPago" required type="date" />
+          </label>
           <p class="form-error" id="form-error" aria-live="polite"></p>
-          <div class="modal-actions"><button class="text-button" id="cancel-purchase" type="button">Cancelar</button><button class="primary-button" id="save-purchase" type="submit">Guardar compra</button></div>
+          <div class="modal-actions">
+            <button class="text-button" id="cancel-purchase" type="button">Cancelar</button>
+            <button class="primary-button" id="save-purchase" type="submit">Guardar compra</button>
+          </div>
         </form>
       </div>
     </div>
@@ -296,6 +299,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- Script de la aplicación -->
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
   </body>
 </html>
