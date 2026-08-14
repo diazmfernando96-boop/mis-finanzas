@@ -342,10 +342,15 @@ const sourceModal = document.querySelector("#card-modal"), sourceForm = document
 const salaryConfigForm = document.querySelector("#salary-config-form");
 
 function closePurchaseModal() { purchaseModal.classList.remove("is-open"); purchaseModal.setAttribute("aria-hidden", "true"); editingPurchaseId = null; }
+
 function openPurchaseModal(purchase = null) { 
-  editingPurchaseId = purchase?.id ?? null; purchaseForm.reset(); 
+  editingPurchaseId = purchase?.id ?? null; 
+  purchaseForm.reset(); 
   document.querySelector("#modal-title").textContent = purchase ? "Editar compra" : "Registrar compra"; 
   document.querySelector("#save-purchase").textContent = purchase ? "Guardar cambios" : "Guardar compra"; 
+  
+  const frequencySelect = document.querySelector("#purchase-frequency");
+
   if (purchase) { 
     document.querySelector("#purchase-name").value = purchase.nombre; 
     document.querySelector("#purchase-amount").value = purchase.montoTotal; 
@@ -353,10 +358,21 @@ function openPurchaseModal(purchase = null) {
     document.querySelector("#purchase-months").value = purchase.mesesSinIntereses; 
     document.querySelector("#purchase-paid-months").value = purchase.mensualidadesPagadas; 
     if (purchase.fechaPrimerPago) document.querySelector("#fechaPrimerPago").value = purchase.fechaPrimerPago;
+    
+    // Si posteriormente guardas la frecuencia en Firestore, asígnala aquí.
+    if (frequencySelect) frequencySelect.value = purchase.frecuenciaPago || "mensual";
   } else {
     document.querySelector("#fechaPrimerPago").value = getDefaultFirstPaymentDate(startOfToday());
+    // Restaurar valor por defecto para nuevas compras
+    if (frequencySelect) frequencySelect.value = "mensual";
   }
-  purchaseModal.classList.add("is-open"); purchaseModal.setAttribute("aria-hidden", "false"); document.querySelector("#purchase-name").focus(); 
+
+  // Disparamos el evento para que las etiquetas se sincronicen correctamente
+  if (frequencySelect) frequencySelect.dispatchEvent(new Event("change"));
+
+  purchaseModal.classList.add("is-open"); 
+  purchaseModal.setAttribute("aria-hidden", "false"); 
+  document.querySelector("#purchase-name").focus(); 
 }
 
 function closeSourceModal() { sourceModal.classList.remove("is-open"); sourceModal.setAttribute("aria-hidden", "true"); editingSourceName = null; }
@@ -678,3 +694,24 @@ auth.onAuthStateChanged((user) => {
 // Inicializaciones
 renderPokemonEasterEgg(); 
 setInterval(renderPokemonEasterEgg, 30000);
+
+// ===================================================
+// CAMBIO DINÁMICO DE ETIQUETAS (MENSUAL / QUINCENAL)
+// ===================================================
+
+const purchaseFrequency = document.querySelector("#purchase-frequency");
+const labelTotalInstallments = document.querySelector("#label-total-installments");
+const labelPaidInstallments = document.querySelector("#label-paid-installments");
+
+if (purchaseFrequency && labelTotalInstallments && labelPaidInstallments) {
+  // Escuchar cuando el usuario cambia la opción en el selector
+  purchaseFrequency.addEventListener("change", (event) => {
+    if (event.target.value === "quincenal") {
+      labelTotalInstallments.textContent = "Quincenas totales";
+      labelPaidInstallments.textContent = "Quincenas ya pagadas";
+    } else {
+      labelTotalInstallments.textContent = "Meses totales";
+      labelPaidInstallments.textContent = "Meses ya pagados";
+    }
+  });
+}
