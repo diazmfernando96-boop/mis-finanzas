@@ -9,12 +9,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Finanzas personales | Dashboard</title>
     <link rel="manifest" href="manifest.json" />
-    <link rel="stylesheet" href="styles.css?v=3" />
+    <link rel="stylesheet" href="styles.css?v=6" />
   </head>
   <body>
     <div id="pokemon-layer" aria-hidden="true"></div>
 
-    <!-- Pantalla de Autenticación -->
+    <!-- Pantalla de Inicio de Sesión / Registro / Recuperación -->
     <div id="auth-screen" class="modal is-open" style="z-index: 100; opacity: 1; pointer-events: auto;">
       <div class="modal-card">
         <div class="modal-header">
@@ -24,11 +24,16 @@
           <label>Correo electrónico
             <input id="auth-email" type="email" required placeholder="correo@ejemplo.com" />
           </label>
-          <label>Contraseña
-            <input id="auth-password" type="password" required minlength="6" placeholder="Mínimo 6 caracteres" />
-          </label>
+          <div id="password-group">
+            <label>Contraseña
+              <input id="auth-password" type="password" required minlength="6" placeholder="Mínimo 6 caracteres" />
+            </label>
+            <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+              <button class="text-button" id="forgot-password-btn" type="button" style="font-size: 0.78rem; color: #a78bfa;">¿Olvidaste tu contraseña?</button>
+            </div>
+          </div>
           <p class="form-error" id="auth-error" aria-live="polite"></p>
-          <div class="modal-actions" style="justify-content: space-between; align-items: center;">
+          <div class="modal-actions" style="justify-content: space-between; align-items: center; margin-top: 10px;">
             <button class="text-button" id="toggle-auth-mode" type="button">¿No tienes cuenta? Regístrate</button>
             <button class="primary-button" id="auth-submit" type="submit">Entrar</button>
           </div>
@@ -36,6 +41,7 @@
       </div>
     </div>
 
+    <!-- Aplicación Principal -->
     <main class="app-layout" id="main-app" style="display: none;">
       <div class="dashboard-shell">
       <header class="topbar">
@@ -214,15 +220,15 @@
       </div>
     </div>
     
-    <!-- SDK de Firebase (App, Firestore y Auth) -->
+    <!-- SDK de Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 
-    <!-- Librería de Gráficas Chart.js -->
+    <!-- Librería de Gráficas -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- Script de la aplicación -->
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=6"></script>
   </body>
 </html>
