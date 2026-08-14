@@ -11,6 +11,11 @@ const firebaseConfig = {
 // 2. Inicializar Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+// Configuración para compatibilidad total con redes de datos móviles (Telcel, AT&T, etc.)
+db.settings({
+  experimentalAutoDetectLongPolling: true,
+  merge: true
+});
 const auth = firebase.auth();
 
 let currentUser = null;
